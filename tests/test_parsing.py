@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from abritel.pipeline import parse_datetime_utc
+from abritel.scraping import parse_datetime_utc
 
 
 def test_parse_datetime_utc_z_suffix() -> None:
