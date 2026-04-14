@@ -1,0 +1,38 @@
+[project]
+name = "feb26_dpm_abritel"
+version = "0.1.0"
+description = "Scraping avis Google Play Abritel, analyse Jupyter, export CSV pour Power BI"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.2",
+    "numpy>=2.0",
+    "matplotlib>=3.9",
+    "seaborn>=0.13",
+    "ipykernel>=6.29",
+    "google-play-scraper>=1.2.7",
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+# Pas de package Python installable : scripts à la racine (1_pipeline.py, notebook).
+package = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

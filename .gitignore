@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+.venv-*/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Bureautique (fichiers de verrouillage)
+.~lock*
+**/.~lock*
+
+# Data (generated)
+data/*.csv
+data/*.db
+data/*.parquet
+/avis_bruts.csv
+/avis_enrichis.csv
+
+# Local tooling / secrets
+.claude/
+.env
+.env.*
+
+# Linting cache
+.ruff_cache/
+
+# OS/editor
+.DS_Store
+.vscode/
+*.swp
