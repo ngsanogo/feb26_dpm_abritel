@@ -19,7 +19,7 @@ LOG = logging.getLogger(__name__)
 TZ_FR = ZoneInfo("Europe/Paris")
 # Fenêtre glissante de 18 mois : assez pour couvrir un cycle saisonnier complet
 # (location vacances) tout en restant pertinent par rapport au produit actuel.
-DATE_DEBUT_INCLUSIVE = date.today().replace(day=1) - timedelta(days=18 * 30)
+DATE_DEBUT_INCLUSIVE = datetime.now(TZ_FR).date().replace(day=1) - timedelta(days=18 * 30)
 
 # --- Constantes sources ---
 
@@ -159,20 +159,30 @@ def telecharger_avis_google_play(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> 
             break
 
         for avis in lot:
-            jour = avis_jour_paris(avis["at"])
+            # google_play_scraper retourne des datetimes naives en heure
+            # locale du système — on les convertit en UTC aware.
+            dt_raw = avis["at"]
+            if isinstance(dt_raw, datetime) and dt_raw.tzinfo is None:
+                dt_utc = dt_raw.astimezone(ZoneInfo("UTC"))
+            else:
+                dt_utc = dt_raw
+            jour = avis_jour_paris(dt_utc)
             if not dans_fenetre(jour, fin, date_debut):
                 continue
             texte = (avis.get("content") or "").strip() or "(sans commentaire)"
             lignes.append(
                 {
-                    "date": avis["at"],
+                    "date": dt_utc,
                     "note": avis["score"],
                     "texte": texte,
                     "source": "Google Play",
                 }
             )
 
-        plus_ancien = avis_jour_paris(lot[-1]["at"])
+        dt_last = lot[-1]["at"]
+        if isinstance(dt_last, datetime) and dt_last.tzinfo is None:
+            dt_last = dt_last.astimezone(ZoneInfo("UTC"))
+        plus_ancien = avis_jour_paris(dt_last)
         if plus_ancien < date_debut or token is None:
             break
         time.sleep(0.5 + random.uniform(0, 0.3))
