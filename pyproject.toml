@@ -14,6 +14,7 @@ dependencies = [
     "requests>=2.31",
     "beautifulsoup4>=4.12",
     "scipy>=1.12",
+    "scikit-posthocs>=0.9",
 ]
 
 [project.optional-dependencies]
@@ -38,3 +39,6 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: tests requiring real network access (deselect with '-m \"not slow\"')",
+]
