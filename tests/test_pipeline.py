@@ -406,11 +406,12 @@ def test_run_pipeline_circuit_breaker(mock_gp, mock_as, mock_tp, tmp_path: Path)
     mock_as.return_value = _make_scraper_df("App Store", 2)
     mock_tp.return_value = _make_scraper_df("Trustpilot", 2)
 
-    try:
-        run_pipeline(chemin_csv=csv_path, date_debut=date(2025, 1, 1))
-        raise AssertionError("SystemExit attendu (circuit breaker)")
-    except SystemExit as e:
-        assert e.code == 1
+    with patch.dict("os.environ", {"CI": "true"}):
+        try:
+            run_pipeline(chemin_csv=csv_path, date_debut=date(2025, 1, 1))
+            raise AssertionError("SystemExit attendu (circuit breaker)")
+        except SystemExit as e:
+            assert e.code == 1
 
     # Le CSV doit toujours contenir les anciennes données Google Play
     df = pd.read_csv(csv_path, encoding="utf-8-sig")

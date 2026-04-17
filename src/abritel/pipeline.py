@@ -308,10 +308,12 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
 
     LOG.info("\n=== Pipeline terminé ===")
     if breaker_triggered:
-        LOG.error(
+        msg = (
             "⚠ Au moins une source a retourné 0 avis (circuit breaker). "
-            "Le CSV a été exporté avec les données existantes préservées. "
-            "Exit code 1 pour alerter CI."
+            "Le CSV a été exporté avec les données existantes préservées."
         )
-        sys.exit(1)
+        if os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true":
+            LOG.error("%s Exit code 1 pour alerter CI.", msg)
+            sys.exit(1)
+        LOG.warning("%s", msg)
     return out
