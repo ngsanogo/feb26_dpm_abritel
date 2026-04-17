@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
+import shutil
+import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -32,6 +37,7 @@ __all__ = [
     "dans_fenetre",
     "enrichir",
     "evaluer_gravite",
+    "exporter_csv",
     "parse_datetime_utc",
     "run_pipeline",
     "valider_dataframe",
@@ -125,12 +131,23 @@ def valider_dataframe(df: pd.DataFrame) -> list[str]:
     return anomalies
 
 
-def exporter_csv(df: pd.DataFrame, chemin: Path) -> None:
+def exporter_csv(df: pd.DataFrame, chemin: Path, *, strict: bool = False) -> None:
     anomalies = valider_dataframe(df)
     for a in anomalies:
         LOG.warning("   ⚠ Validation : %s", a)
+    if strict and anomalies:
+        raise ValueError(f"Export bloqué — {len(anomalies)} anomalie(s) : {anomalies}")
     chemin.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(chemin, index=False, encoding="utf-8-sig")
+    # Écriture atomique : temp file + os.replace() pour éviter la corruption
+    # si le process est tué mid-write.
+    fd, tmp_path = tempfile.mkstemp(dir=chemin.parent, suffix=".tmp")
+    os.close(fd)
+    try:
+        df.to_csv(tmp_path, index=False, encoding="utf-8-sig")
+        os.replace(tmp_path, chemin)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
     LOG.info("OK — %s avis enregistrés dans: %s", len(df), chemin.resolve())
 
 
@@ -144,7 +161,10 @@ def _charger_existant(chemin_csv: Path) -> pd.DataFrame | None:
         LOG.info("   CSV existant chargé : %d avis", len(df))
         return df
     except Exception as e:
-        LOG.warning("   Impossible de charger le CSV existant : %s", e)
+        LOG.error("   CSV existant corrompu ou illisible : %s", e)
+        bak = chemin_csv.with_suffix(".csv.bak")
+        shutil.copy2(chemin_csv, bak)
+        LOG.error("   Sauvegarde de secours créée : %s", bak)
         return None
 
 
@@ -220,16 +240,26 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
     LOG.info("Période cible : %s → %s (Europe/Paris)", date_debut.isoformat(), fin.isoformat())
     LOG.info("")
 
-    LOG.info("ÉTAPE 1 — Collecte des avis")
+    LOG.info("ÉTAPE 1 — Collecte des avis (3 sources en parallèle)")
 
-    LOG.info("  [1/3] Google Play Store…")
-    df_gp = telecharger_avis_google_play(date_debut=date_debut)
+    scrapers = {
+        "Google Play": telecharger_avis_google_play,
+        "App Store": telecharger_avis_app_store,
+        "Trustpilot": telecharger_avis_trustpilot,
+    }
+    results: dict[str, pd.DataFrame] = {}
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(fn, date_debut=date_debut): name for name, fn in scrapers.items()
+        }
+        for future in as_completed(futures):
+            name = futures[future]
+            results[name] = future.result()
+            LOG.info("  ✓ %s : %s avis", name, len(results[name]))
 
-    LOG.info("  [2/3] Apple App Store…")
-    df_as = telecharger_avis_app_store(date_debut=date_debut)
-
-    LOG.info("  [3/3] Trustpilot…")
-    df_tp = telecharger_avis_trustpilot(date_debut=date_debut)
+    df_gp = results["Google Play"]
+    df_as = results["App Store"]
+    df_tp = results["Trustpilot"]
 
     brut = pd.concat([df_gp, df_as, df_tp], ignore_index=True)
     brut["date"] = pd.to_datetime(brut["date"], utc=True)
@@ -244,11 +274,13 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
 
     # Circuit breaker : si une source retourne 0 avis en mode incrémental
     # alors qu'on en avait avant, c'est suspect (API cassée / structure changée).
+    breaker_triggered = False
     if existant is not None and not existant.empty:
         for nom, df_src in [("Google Play", df_gp), ("App Store", df_as), ("Trustpilot", df_tp)]:
             avait_avant = (existant["source"] == nom).sum() > 0
             a_maintenant = len(df_src) > 0
             if avait_avant and not a_maintenant:
+                breaker_triggered = True
                 LOG.warning(
                     "   ⚠ CIRCUIT BREAKER : %s a retourné 0 avis alors qu'il en avait avant "
                     "— API potentiellement cassée. Le CSV existant est préservé pour cette source.",
@@ -272,7 +304,14 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
     _log_rapport(out, n_ancien=n_ancien)
 
     LOG.info("\nÉTAPE 3 — Export CSV…")
-    exporter_csv(out, chemin_csv)
+    exporter_csv(out, chemin_csv, strict=True)
 
     LOG.info("\n=== Pipeline terminé ===")
+    if breaker_triggered:
+        LOG.error(
+            "⚠ Au moins une source a retourné 0 avis (circuit breaker). "
+            "Le CSV a été exporté avec les données existantes préservées. "
+            "Exit code 1 pour alerter CI."
+        )
+        sys.exit(1)
     return out
