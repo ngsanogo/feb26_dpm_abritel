@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import threading
 import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -49,7 +50,7 @@ _USER_AGENTS = [
     ),
 ]
 
-_SESSION: requests.Session | None = None
+_THREAD_LOCAL = threading.local()
 
 
 def _make_session() -> requests.Session:
@@ -59,10 +60,11 @@ def _make_session() -> requests.Session:
 
 
 def _get_session() -> requests.Session:
-    global _SESSION  # noqa: PLW0603
-    if _SESSION is None:
-        _SESSION = _make_session()
-    return _SESSION
+    s = getattr(_THREAD_LOCAL, "session", None)
+    if s is None:
+        s = _make_session()
+        _THREAD_LOCAL.session = s
+    return s
 
 
 # --- Helpers ---
@@ -85,18 +87,50 @@ def dans_fenetre(jour: date, date_fin: date, date_debut: date = DATE_DEBUT_INCLU
     return date_debut <= jour <= date_fin
 
 
+def _joindre_texte(titre: str, contenu: str) -> str:
+    """Fusionne titre + contenu avec fallback '(sans commentaire)'."""
+    titre = (titre or "").strip()
+    contenu = (contenu or "").strip()
+    texte = f"{titre}. {contenu}".strip(". ") if titre else contenu
+    return texte if texte else "(sans commentaire)"
+
+
+def _deduquer_et_trier(df: pd.DataFrame) -> pd.DataFrame:
+    """Trie par date décroissante et déduplique sur (source, date, note, texte)."""
+    if df.empty:
+        return df
+    return df.sort_values("date", ascending=False).drop_duplicates(
+        subset=["source", "date", "note", "texte"],
+        keep="first",
+    )
+
+
+def _backoff_delay(attempt: int, err: requests.RequestException) -> float:
+    """Calcule le délai de retry : respecte Retry-After (429) ou backoff exponentiel."""
+    resp = getattr(err, "response", None)
+    if resp is not None and resp.status_code == 429:
+        retry_after = resp.headers.get("Retry-After")
+        if retry_after:
+            try:
+                return min(float(retry_after), 120)
+            except ValueError:
+                pass
+    return min(2**attempt + random.uniform(0, 0.5), 10)
+
+
 def get_json(url: str, *, timeout_s: int = 15, tentatives: int = 3) -> dict | None:
     """GET JSON avec retries et backoff exponentiel."""
     session = _get_session()
     last_err: Exception | None = None
     for i in range(tentatives):
         try:
-            resp = session.get(url, timeout=timeout_s)
+            headers = {"User-Agent": random.choice(_USER_AGENTS)}
+            resp = session.get(url, timeout=timeout_s, headers=headers)
             resp.raise_for_status()
             return resp.json()
         except requests.RequestException as e:
             last_err = e
-            time.sleep(min(2**i + random.uniform(0, 0.5), 10))
+            time.sleep(_backoff_delay(i, e))
     LOG.warning("HTTP JSON — échec après %s tentatives: %s", tentatives, last_err)
     return None
 
@@ -107,12 +141,13 @@ def get_text(url: str, *, timeout_s: int = 15, tentatives: int = 3) -> str | Non
     last_err: Exception | None = None
     for i in range(tentatives):
         try:
-            resp = session.get(url, timeout=timeout_s)
+            headers = {"User-Agent": random.choice(_USER_AGENTS)}
+            resp = session.get(url, timeout=timeout_s, headers=headers)
             resp.raise_for_status()
             return resp.text
         except requests.RequestException as e:
             last_err = e
-            time.sleep(min(2**i + random.uniform(0, 0.5), 10))
+            time.sleep(_backoff_delay(i, e))
     LOG.warning("HTTP text — échec après %s tentatives: %s", tentatives, last_err)
     return None
 
@@ -150,7 +185,7 @@ def telecharger_avis_google_play(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> 
                     continuation_token=token,
                 )
                 break
-            except Exception as e:
+            except (requests.RequestException, ValueError, TypeError) as e:
                 if tentative == 2:
                     LOG.warning("Google Play — erreur après 3 tentatives: %s", e)
                 time.sleep(min(2**tentative + random.uniform(0, 0.5), 10))
@@ -187,12 +222,7 @@ def telecharger_avis_google_play(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> 
             break
         time.sleep(0.5 + random.uniform(0, 0.3))
 
-    out = pd.DataFrame(lignes)
-    if not out.empty:
-        out = out.sort_values("date", ascending=False).drop_duplicates(
-            subset=["source", "date", "note", "texte"],
-            keep="first",
-        )
+    out = _deduquer_et_trier(pd.DataFrame(lignes))
     LOG.info("Google Play: %s page(s), %s avis retenus", pages, len(out))
     return out
 
@@ -230,11 +260,10 @@ def telecharger_avis_app_store(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> pd
             if not dans_fenetre(jour, fin, date_debut):
                 continue
 
-            titre = (entry.get("title", {}).get("label") or "").strip()
-            contenu = (entry.get("content", {}).get("label") or "").strip()
-            texte = f"{titre}. {contenu}".strip(". ") if titre else contenu
-            if not texte:
-                texte = "(sans commentaire)"
+            texte = _joindre_texte(
+                entry.get("title", {}).get("label", ""),
+                entry.get("content", {}).get("label", ""),
+            )
 
             lignes.append(
                 {
@@ -247,12 +276,7 @@ def telecharger_avis_app_store(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> pd
 
         pages_ok += 1
 
-    out = pd.DataFrame(lignes)
-    if not out.empty:
-        out = out.sort_values("date", ascending=False).drop_duplicates(
-            subset=["source", "date", "note", "texte"],
-            keep="first",
-        )
+    out = _deduquer_et_trier(pd.DataFrame(lignes))
     LOG.info("App Store: %s page(s), %s avis retenus", pages_ok, len(out))
     return out
 
@@ -301,11 +325,7 @@ def _trustpilot_pages(params: str, *, date_debut: date = DATE_DEBUT_INCLUSIVE) -
             if not dans_fenetre(jour, fin, date_debut):
                 continue
 
-            titre = (avis.get("title") or "").strip()
-            contenu = (avis.get("text") or "").strip()
-            texte = f"{titre}. {contenu}".strip(". ") if titre else contenu
-            if not texte:
-                texte = "(sans commentaire)"
+            texte = _joindre_texte(avis.get("title", ""), avis.get("text", ""))
 
             lignes.append(
                 {
@@ -333,11 +353,6 @@ def telecharger_avis_trustpilot(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> p
         lignes.extend(batch)
         LOG.info("Trustpilot: %s étoile(s): %s avis", stars, len(batch))
 
-    out = pd.DataFrame(lignes)
-    if not out.empty:
-        out = out.sort_values("date", ascending=False).drop_duplicates(
-            subset=["source", "date", "note", "texte"],
-            keep="first",
-        )
+    out = _deduquer_et_trier(pd.DataFrame(lignes))
     LOG.info("Trustpilot: %s avis retenus (filtre par étoiles)", len(out))
     return out
