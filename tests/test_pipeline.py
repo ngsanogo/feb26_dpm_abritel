@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -11,6 +12,8 @@ from abritel.pipeline import (
     dans_fenetre,
     enrichir,
     evaluer_gravite,
+    exporter_csv,
+    run_pipeline,
     valider_dataframe,
 )
 
@@ -272,3 +275,143 @@ def test_valider_dataframe_empty() -> None:
         columns=["date", "note", "texte", "source", "Catégorie", "Catégorie_secondaire", "Gravité"]
     )
     assert valider_dataframe(df) == []
+
+
+# --- exporter_csv ---
+
+
+def test_exporter_csv_bom_and_header(tmp_path: Path) -> None:
+    df = pd.DataFrame(
+        {
+            "date": [datetime(2025, 6, 1, tzinfo=UTC)],
+            "note": [3],
+            "texte": ["Un avis"],
+            "source": ["Google Play"],
+            "Catégorie": ["Autre"],
+            "Catégorie_secondaire": [""],
+            "Gravité": ["Basse"],
+        }
+    )
+    out = tmp_path / "export.csv"
+    exporter_csv(df, out)
+    raw = out.read_bytes()
+    assert raw[:3] == b"\xef\xbb\xbf", "UTF-8 BOM manquant"
+    header = raw.decode("utf-8-sig").splitlines()[0]
+    assert header == "date,note,texte,source,Catégorie,Catégorie_secondaire,Gravité"
+    assert raw.count(b"\n") == 2  # header + 1 data row
+
+
+def test_exporter_csv_strict_blocks_anomalies(tmp_path: Path) -> None:
+    df = pd.DataFrame(
+        {
+            "date": [datetime(2025, 6, 1, tzinfo=UTC)],
+            "note": [99],
+            "texte": ["test"],
+            "source": ["Google Play"],
+            "Catégorie": ["Autre"],
+            "Catégorie_secondaire": [""],
+            "Gravité": ["Basse"],
+        }
+    )
+    out = tmp_path / "export.csv"
+    try:
+        exporter_csv(df, out, strict=True)
+        raise AssertionError("ValueError attendu")
+    except ValueError as e:
+        assert "anomalie" in str(e).lower()
+    assert not out.exists(), "Le fichier ne doit pas être créé en mode strict"
+
+
+def test_exporter_csv_atomic_no_partial_on_error(tmp_path: Path) -> None:
+    out = tmp_path / "export.csv"
+    out.write_text("données existantes")
+    try:
+        # Un objet non-sérialisable provoquera une erreur dans to_csv
+        exporter_csv("not a dataframe", out)  # type: ignore[arg-type]
+    except Exception:
+        pass
+    # Le fichier original doit être intact
+    assert out.read_text() == "données existantes"
+
+
+# --- run_pipeline e2e ---
+
+
+def _make_scraper_df(source: str, n: int = 3) -> pd.DataFrame:
+    rows = []
+    for i in range(n):
+        rows.append(
+            {
+                "date": pd.Timestamp(f"2025-06-{10 + i}T10:00:00+00:00"),
+                "note": (i % 5) + 1,
+                "texte": f"Avis test {source} #{i}",
+                "source": source,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+@patch("abritel.pipeline.telecharger_avis_trustpilot")
+@patch("abritel.pipeline.telecharger_avis_app_store")
+@patch("abritel.pipeline.telecharger_avis_google_play")
+def test_run_pipeline_e2e(mock_gp, mock_as, mock_tp, tmp_path: Path) -> None:
+    mock_gp.return_value = _make_scraper_df("Google Play", 5)
+    mock_as.return_value = _make_scraper_df("App Store", 3)
+    mock_tp.return_value = _make_scraper_df("Trustpilot", 4)
+
+    csv_path = tmp_path / "data" / "avis.csv"
+    result = run_pipeline(chemin_csv=csv_path, date_debut=date(2025, 1, 1))
+
+    assert csv_path.exists()
+    assert len(result) == 12
+    assert set(result["source"].unique()) == {"Google Play", "App Store", "Trustpilot"}
+    assert "Catégorie" in result.columns
+    assert "Gravité" in result.columns
+    assert valider_dataframe(result) == []
+
+
+@patch("abritel.pipeline.telecharger_avis_trustpilot")
+@patch("abritel.pipeline.telecharger_avis_app_store")
+@patch("abritel.pipeline.telecharger_avis_google_play")
+def test_run_pipeline_incremental_dedup(mock_gp, mock_as, mock_tp, tmp_path: Path) -> None:
+    mock_gp.return_value = _make_scraper_df("Google Play", 2)
+    mock_as.return_value = _make_scraper_df("App Store", 1)
+    mock_tp.return_value = _make_scraper_df("Trustpilot", 1)
+
+    csv_path = tmp_path / "avis.csv"
+    # Premier run
+    run_pipeline(chemin_csv=csv_path, date_debut=date(2025, 1, 1))
+    df1 = pd.read_csv(csv_path, encoding="utf-8-sig")
+    n_first = len(df1)
+
+    # Deuxième run avec les mêmes données → pas de doublons
+    run_pipeline(chemin_csv=csv_path, date_debut=date(2025, 1, 1))
+    df2 = pd.read_csv(csv_path, encoding="utf-8-sig")
+    assert len(df2) == n_first
+
+
+@patch("abritel.pipeline.telecharger_avis_trustpilot")
+@patch("abritel.pipeline.telecharger_avis_app_store")
+@patch("abritel.pipeline.telecharger_avis_google_play")
+def test_run_pipeline_circuit_breaker(mock_gp, mock_as, mock_tp, tmp_path: Path) -> None:
+    mock_gp.return_value = _make_scraper_df("Google Play", 3)
+    mock_as.return_value = _make_scraper_df("App Store", 2)
+    mock_tp.return_value = _make_scraper_df("Trustpilot", 2)
+
+    csv_path = tmp_path / "avis.csv"
+    run_pipeline(chemin_csv=csv_path, date_debut=date(2025, 1, 1))
+
+    # Deuxième run : Google Play retourne 0 avis → circuit breaker
+    mock_gp.return_value = pd.DataFrame(columns=["date", "note", "texte", "source"])
+    mock_as.return_value = _make_scraper_df("App Store", 2)
+    mock_tp.return_value = _make_scraper_df("Trustpilot", 2)
+
+    try:
+        run_pipeline(chemin_csv=csv_path, date_debut=date(2025, 1, 1))
+        raise AssertionError("SystemExit attendu (circuit breaker)")
+    except SystemExit as e:
+        assert e.code == 1
+
+    # Le CSV doit toujours contenir les anciennes données Google Play
+    df = pd.read_csv(csv_path, encoding="utf-8-sig")
+    assert (df["source"] == "Google Play").sum() > 0
