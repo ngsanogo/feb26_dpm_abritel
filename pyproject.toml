@@ -39,6 +39,7 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m \"not slow\""
 markers = [
     "slow: tests requiring real network access (deselect with '-m \"not slow\"')",
 ]

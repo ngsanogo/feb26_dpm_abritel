@@ -24,4 +24,4 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run contract tests
-        run: uv run pytest -m slow -v
+        run: uv run pytest -m slow -v --override-ini addopts=
