@@ -110,7 +110,7 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "erreur",
             "ne fonctionne",
             "ne marche",
-            "lent",
+            " lent",
             "lenteur",
             "connexion",
             "mot de passe",
