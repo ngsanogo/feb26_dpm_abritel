@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -11,6 +11,7 @@ import pandas as pd
 from abritel.categorisation import categoriser_avis, categoriser_avis_multi, evaluer_gravite
 from abritel.scraping import (
     DATE_DEBUT_INCLUSIVE,
+    TZ_FR,
     avis_jour_paris,
     dans_fenetre,
     date_fin_inclusive,
@@ -209,7 +210,9 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
         n_ancien = len(existant)
         date_max = existant["date"].max()
         # Scraper avec 3 jours de marge pour les avis publiés en retard
-        date_debut_incremental = (date_max - pd.Timedelta(days=3)).date()
+        # .date() sur UTC donnerait la date UTC ; on convertit en Paris
+        # pour rester cohérent avec le filtrage des scrapers.
+        date_debut_incremental = date_max.tz_convert(TZ_FR).date() - timedelta(days=3)
         if date_debut_incremental > date_debut:
             date_debut = date_debut_incremental
             LOG.info("   Mode incrémental : scraping depuis %s (3j de marge)", date_debut)
