@@ -118,8 +118,8 @@ def _backoff_delay(attempt: int, err: requests.RequestException) -> float:
     return min(2**attempt + random.uniform(0, 0.5), 10)
 
 
-def get_json(url: str, *, timeout_s: int = 15, tentatives: int = 3) -> dict | None:
-    """GET JSON avec retries et backoff exponentiel."""
+def _http_get(url: str, *, parse_json: bool = False, timeout_s: int = 15, tentatives: int = 3):
+    """GET avec retries et backoff exponentiel. Retourne JSON (dict) ou texte (str), ou None."""
     session = _get_session()
     last_err: Exception | None = None
     for i in range(tentatives):
@@ -127,29 +127,22 @@ def get_json(url: str, *, timeout_s: int = 15, tentatives: int = 3) -> dict | No
             headers = {"User-Agent": random.choice(_USER_AGENTS)}
             resp = session.get(url, timeout=timeout_s, headers=headers)
             resp.raise_for_status()
-            return resp.json()
+            return resp.json() if parse_json else resp.text
         except requests.RequestException as e:
             last_err = e
             time.sleep(_backoff_delay(i, e))
-    LOG.warning("HTTP JSON — échec après %s tentatives: %s", tentatives, last_err)
+    LOG.warning("HTTP — échec après %s tentatives: %s", tentatives, last_err)
     return None
+
+
+def get_json(url: str, *, timeout_s: int = 15, tentatives: int = 3) -> dict | None:
+    """GET JSON avec retries et backoff exponentiel."""
+    return _http_get(url, parse_json=True, timeout_s=timeout_s, tentatives=tentatives)
 
 
 def get_text(url: str, *, timeout_s: int = 15, tentatives: int = 3) -> str | None:
     """GET HTML/text avec retries et backoff exponentiel."""
-    session = _get_session()
-    last_err: Exception | None = None
-    for i in range(tentatives):
-        try:
-            headers = {"User-Agent": random.choice(_USER_AGENTS)}
-            resp = session.get(url, timeout=timeout_s, headers=headers)
-            resp.raise_for_status()
-            return resp.text
-        except requests.RequestException as e:
-            last_err = e
-            time.sleep(_backoff_delay(i, e))
-    LOG.warning("HTTP text — échec après %s tentatives: %s", tentatives, last_err)
-    return None
+    return _http_get(url, parse_json=False, timeout_s=timeout_s, tentatives=tentatives)
 
 
 def parse_datetime_utc(value: str) -> datetime | None:
