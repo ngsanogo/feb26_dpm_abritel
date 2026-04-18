@@ -12,18 +12,22 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@v4
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version-file: .python-version
+          python-version: "3.12"
           enable-cache: true
 
       - name: Sync dependencies
         run: uv sync
 
+      # Soft breaker : le job reste vert et le CSV est commité même si une source
+      # retourne 0 avis (transitoire / fenêtre courte). Annotation ::warning:: dans les logs.
       - name: Run pipeline
+        env:
+          ABRITEL_SOFT_CIRCUIT_BREAKER: "1"
         run: uv run python 1_pipeline.py
 
       - name: Commit and push CSV
