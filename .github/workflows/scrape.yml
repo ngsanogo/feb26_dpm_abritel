@@ -30,6 +30,22 @@ jobs:
           ABRITEL_SOFT_CIRCUIT_BREAKER: "1"
         run: uv run python 1_pipeline.py
 
+      - name: Check for spikes
+        run: |
+          if [ -f data/pipeline_meta.json ]; then
+            python3 -c "
+          import json, sys
+          d = json.load(open('data/pipeline_meta.json'))
+          spikes = d.get('spikes', [])
+          for s in spikes:
+              safe = s.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::warning::{safe}')
+          pct = d.get('pct_autre', 0)
+          if pct > 30:
+              print(f'::warning::Taux Autre eleve: {pct}%')
+          "
+          fi
+
       - name: Commit and push CSV
         run: |
           git config user.name "github-actions[bot]"
@@ -37,3 +53,4 @@ jobs:
           git add data/avis_enrichis.csv
           git diff --cached --quiet || git commit -m "chore: daily scrape $(date -u +%Y-%m-%d)"
           git push
+
