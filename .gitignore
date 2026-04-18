@@ -28,6 +28,9 @@ __pycache__/
 # Généré à côté du CSV (non commité par le workflow scrape)
 data/pipeline_meta.json
 
+# Export HTML du notebook (généré, ~3 MB)
+2_analyse_complete.html
+
 # OS/editor
 .DS_Store
 .vscode/
