@@ -59,7 +59,6 @@ Importer **`data/avis_enrichis.csv`** (UTF-8-SIG). Mesures et definitions : voir
 | `.python-version` | Version Python cible pour `uv python install` |
 | `1_pipeline.py` | Scraping 3 sources + categorisation -> CSV |
 | `2_analyse_complete.ipynb` | Analyse complete |
-| `docs/` | Livrables produit (BMC, personas, benchmark, MVP, etc.) |
 
 ## Colonnes du CSV
 
