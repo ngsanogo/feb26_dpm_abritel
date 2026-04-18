@@ -25,6 +25,9 @@ __pycache__/
 # Linting cache
 .ruff_cache/
 
+# Power BI (binary, not diffable)
+*.pbix
+
 # OS/editor
 .DS_Store
 .vscode/
