@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
@@ -52,15 +53,20 @@ __all__ = [
 
 
 def enrichir(df: pd.DataFrame) -> pd.DataFrame:
-    """Ajoute les colonnes Catégorie, Catégorie_secondaire et Gravité."""
+    """Ajoute les colonnes Catégorie, Catégorie_secondaire, Gravité et longueur_texte."""
     df = df.copy()
     notes = pd.to_numeric(df["note"], errors="coerce")
     n_invalid = int(notes.isna().sum())
     if n_invalid:
         LOG.warning("enrichir: %s note(s) invalide(s) mises à NA", n_invalid)
     df["note"] = notes.astype("Int64")
-    df["Catégorie"] = df["texte"].map(categoriser_avis)
+    df["longueur_texte"] = df["texte"].apply(
+        lambda t: len(str(t).split()) if isinstance(t, str) else 0
+    )
     multi = df["texte"].map(categoriser_avis_multi)
+    # Catégorie principale = premier élément du classement score-based (ou "Autre")
+    df["Catégorie"] = multi.map(lambda cats: cats[0] if cats else "Autre")
+    # Catégorie secondaire = deuxième élément si existant, en excluant la principale
     df["Catégorie_secondaire"] = multi.map(lambda cats: cats[1] if len(cats) > 1 else "")
     df["Gravité"] = [
         evaluer_gravite(tx, int(n) if pd.notna(n) else 0, cat)
@@ -74,6 +80,7 @@ _COLONNES_ATTENDUES = [
     "note",
     "texte",
     "source",
+    "longueur_texte",
     "Catégorie",
     "Catégorie_secondaire",
     "Gravité",
@@ -225,6 +232,32 @@ def _log_rapport(df: pd.DataFrame, n_ancien: int = 0) -> None:
             LOG.warning("   ⚠ ALERTE : 0 avis pour %s — vérifier le scraper", source)
 
 
+def _ecrire_meta(df: pd.DataFrame, chemin_csv: Path, *, n_ancien: int, breaker: bool) -> None:
+    """Écrit pipeline_meta.json à côté du CSV pour le monitoring Power BI / dashboard."""
+    from datetime import UTC, datetime
+
+    n_total = len(df)
+    src_counts = df["source"].value_counts().to_dict() if not df.empty else {}
+    pct_autre = 0.0
+    if not df.empty and "Catégorie" in df.columns:
+        pct_autre = round(100 * (df["Catégorie"] == "Autre").sum() / n_total, 1)
+
+    meta = {
+        "last_run": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "n_avis_total": n_total,
+        "n_avis_nouveaux": n_total - n_ancien,
+        "sources": {k: int(v) for k, v in src_counts.items()},
+        "pct_autre": pct_autre,
+        "circuit_breaker_triggered": breaker,
+    }
+    chemin_meta = chemin_csv.with_name("pipeline_meta.json")
+    try:
+        chemin_meta.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        LOG.info("   Métadonnées : %s", chemin_meta.resolve())
+    except Exception as e:
+        LOG.warning("   Impossible d'écrire pipeline_meta.json : %s", e)
+
+
 def _soft_circuit_breaker_ci() -> bool:
     """Si vrai avec CI, un circuit breaker ne fait pas échouer le processus (exit 0)."""
     v = (os.getenv(_ENV_SOFT_CIRCUIT_BREAKER) or "").strip().lower()
@@ -330,6 +363,8 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
 
     LOG.info("\nÉTAPE 3 — Export CSV…")
     exporter_csv(out, chemin_csv, strict=True)
+
+    _ecrire_meta(out, chemin_csv, n_ancien=n_ancien, breaker=breaker_triggered)
 
     LOG.info("\n=== Pipeline terminé ===")
     if breaker_triggered:

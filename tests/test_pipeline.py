@@ -4,18 +4,16 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from abritel.categorisation import categoriser_avis_multi, evaluer_gravite
 from abritel.pipeline import (
     _charger_existant,
     _fusionner,
-    avis_jour_paris,
-    categoriser_avis_multi,
-    dans_fenetre,
     enrichir,
-    evaluer_gravite,
     exporter_csv,
     run_pipeline,
     valider_dataframe,
 )
+from abritel.scraping import avis_jour_paris, dans_fenetre
 
 # --- dans_fenetre ---
 
@@ -230,6 +228,7 @@ def test_valider_dataframe_valid() -> None:
             "note": [3],
             "texte": ["Un avis normal"],
             "source": ["Google Play"],
+            "longueur_texte": [3],
             "Catégorie": ["Autre"],
             "Catégorie_secondaire": [""],
             "Gravité": ["Basse"],
@@ -245,6 +244,7 @@ def test_valider_dataframe_note_hors_bornes() -> None:
             "note": [6],
             "texte": ["test"],
             "source": ["Google Play"],
+            "longueur_texte": [1],
             "Catégorie": ["Autre"],
             "Catégorie_secondaire": [""],
             "Gravité": ["Basse"],
@@ -261,6 +261,7 @@ def test_valider_dataframe_categorie_inconnue() -> None:
             "note": [3],
             "texte": ["test"],
             "source": ["Google Play"],
+            "longueur_texte": [1],
             "Catégorie": ["Inventée"],
             "Catégorie_secondaire": [""],
             "Gravité": ["Basse"],
@@ -272,7 +273,16 @@ def test_valider_dataframe_categorie_inconnue() -> None:
 
 def test_valider_dataframe_empty() -> None:
     df = pd.DataFrame(
-        columns=["date", "note", "texte", "source", "Catégorie", "Catégorie_secondaire", "Gravité"]
+        columns=[
+            "date",
+            "note",
+            "texte",
+            "source",
+            "longueur_texte",
+            "Catégorie",
+            "Catégorie_secondaire",
+            "Gravité",
+        ]
     )
     assert valider_dataframe(df) == []
 
@@ -287,6 +297,7 @@ def test_exporter_csv_bom_and_header(tmp_path: Path) -> None:
             "note": [3],
             "texte": ["Un avis"],
             "source": ["Google Play"],
+            "longueur_texte": [2],
             "Catégorie": ["Autre"],
             "Catégorie_secondaire": [""],
             "Gravité": ["Basse"],
@@ -297,7 +308,7 @@ def test_exporter_csv_bom_and_header(tmp_path: Path) -> None:
     raw = out.read_bytes()
     assert raw[:3] == b"\xef\xbb\xbf", "UTF-8 BOM manquant"
     header = raw.decode("utf-8-sig").splitlines()[0]
-    assert header == "date,note,texte,source,Catégorie,Catégorie_secondaire,Gravité"
+    assert header == "date,note,texte,source,longueur_texte,Catégorie,Catégorie_secondaire,Gravité"
     assert raw.count(b"\n") == 2  # header + 1 data row
 
 
@@ -308,6 +319,7 @@ def test_exporter_csv_strict_blocks_anomalies(tmp_path: Path) -> None:
             "note": [99],
             "texte": ["test"],
             "source": ["Google Play"],
+            "longueur_texte": [1],
             "Catégorie": ["Autre"],
             "Catégorie_secondaire": [""],
             "Gravité": ["Basse"],
