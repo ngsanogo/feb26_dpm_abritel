@@ -1,0 +1,22 @@
+Catégorie,Catégorie_secondaire,effectif
+Annulation / Réservation,Financier,63
+Financier,Service Client,37
+Localisation / Langue,Financier,34
+Financier,Qualité du bien,31
+Service Client,Qualité du bien,24
+Financier,Bug Technique,19
+Bug Technique,Qualité du bien,13
+Annulation / Réservation,Service Client,13
+Localisation / Langue,Annulation / Réservation,10
+Annulation / Réservation,Qualité du bien,9
+Annulation / Réservation,Bug Technique,9
+Financier,UX / Ergonomie,8
+Localisation / Langue,Service Client,6
+Bug Technique,Service Client,6
+Localisation / Langue,Bug Technique,5
+Bug Technique,UX / Ergonomie,5
+UX / Ergonomie,Qualité du bien,4
+Localisation / Langue,UX / Ergonomie,3
+UX / Ergonomie,Service Client,3
+Localisation / Langue,Qualité du bien,2
+Annulation / Réservation,UX / Ergonomie,2

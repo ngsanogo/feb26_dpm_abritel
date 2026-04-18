@@ -1,9 +1,9 @@
 Catégorie,Effectif,pct_total,pct_cumule
-Autre,150,21.5517,21.55
-Financier,115,16.523,38.07
-Localisation / Langue,106,15.2299,53.3
-Annulation / Réservation,96,13.7931,67.1
-Qualité du bien,79,11.3506,78.45
-Service Client,59,8.477,86.93
-Bug Technique,58,8.3333,95.26
-UX / Ergonomie,33,4.7414,100.0
+Autre,185,25.8741,25.87
+Financier,122,17.0629,42.94
+Annulation / Réservation,102,14.2657,57.2
+Localisation / Langue,101,14.1259,71.33
+Qualité du bien,72,10.0699,81.4
+Bug Technique,51,7.1329,88.53
+Service Client,49,6.8531,95.38
+UX / Ergonomie,33,4.6154,100.0
