@@ -68,6 +68,7 @@ Importer **`data/avis_enrichis.csv`** (UTF-8-SIG). Mesures et definitions : voir
 | `note` | Note 1-5 |
 | `texte` | Contenu textuel de l'avis |
 | `source` | Origine : Google Play, App Store, Trustpilot |
+| `longueur_texte` | Nombre de mots du texte (proxy de la richesse du feedback) |
 | `Catégorie` | Localisation / Langue, Annulation / Réservation, Financier, Bug Technique, UX / Ergonomie, Service Client, Qualité du bien, Autre |
 | `Catégorie_secondaire` | Deuxieme categorie si l'avis matche plusieurs themes (vide sinon) |
 | `Gravité` | Haute, Moyenne, Basse |
