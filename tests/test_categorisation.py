@@ -1,4 +1,10 @@
-from abritel.categorisation import categoriser_avis, evaluer_gravite
+from abritel.categorisation import (
+    categoriser_avis,
+    detecter_sentiment_positif,
+    evaluer_gravite,
+    evaluer_gravite_texte,
+    sous_cat_autre,
+)
 
 
 def test_categoriser_localisation_langue() -> None:
@@ -132,3 +138,181 @@ def test_categoriser_loueur() -> None:
 
 def test_categoriser_aucun_suivi() -> None:
     assert categoriser_avis("Aucun suivi en cas de plainte") == "Service Client"
+
+
+# --- Mots-clés anglais (ajout avril 2026) ---
+
+
+def test_categoriser_glitch_bug_technique() -> None:
+    assert categoriser_avis("The app has a glitch when I try to book") == "Bug Technique"
+
+
+def test_categoriser_freeze_bug_technique() -> None:
+    assert categoriser_avis("App freeze every time I open it") == "Bug Technique"
+
+
+def test_categoriser_not_working_bug_technique() -> None:
+    assert categoriser_avis("The search is not working at all") == "Bug Technique"
+
+
+def test_categoriser_refund_financier() -> None:
+    assert categoriser_avis("I never received my refund after cancellation") == "Financier"
+
+
+def test_categoriser_scam_financier() -> None:
+    assert categoriser_avis("Total scam, charged twice for the same booking") == "Financier"
+
+
+def test_categoriser_customer_service_en() -> None:
+    assert categoriser_avis("Customer service never replies to my emails") == "Service Client"
+
+
+def test_categoriser_hard_to_use_ux() -> None:
+    assert categoriser_avis("Hard to use and not intuitive at all") == "UX / Ergonomie"
+
+
+def test_categoriser_composite_connexion_bug() -> None:
+    """Connexion impossible (phrase composite) → Bug Technique."""
+    assert categoriser_avis("connexion impossible depuis la mise à jour") == "Bug Technique"
+
+
+def test_categoriser_panne_bug_technique() -> None:
+    assert categoriser_avis("2 pannes dans la journée ça devient pénible") == "Bug Technique"
+
+
+def test_categoriser_formulaire_bug_technique() -> None:
+    assert categoriser_avis("impossible d'aller au bout du formulaire") == "Bug Technique"
+
+
+def test_categoriser_utilisation_difficile_ux() -> None:
+    assert categoriser_avis("utilisation difficile pour notre âge") == "UX / Ergonomie"
+
+
+def test_categoriser_ne_publie_service_client() -> None:
+    assert categoriser_avis("Abritel ne publie que les avis positifs") == "Service Client"
+
+
+def test_categoriser_pas_disponible_reservation() -> None:
+    assert (
+        categoriser_avis("on réserve et au final ce n'est pas disponible")
+        == "Annulation / Réservation"
+    )
+
+
+def test_categoriser_indicatif_localisation() -> None:
+    assert (
+        categoriser_avis("l'indicatif du Togo est le +228 merci de rectifier")
+        == "Localisation / Langue"
+    )
+
+
+# --- sous_cat_autre ---
+
+
+def test_sous_cat_autre_positif_court() -> None:
+    assert sous_cat_autre(note=5, longueur_texte=8) == "positif court"
+
+
+def test_sous_cat_autre_positif_court_note_4() -> None:
+    assert sous_cat_autre(note=4, longueur_texte=15) == "positif court"
+
+
+def test_sous_cat_autre_negatif_long() -> None:
+    assert sous_cat_autre(note=1, longueur_texte=40) == "négatif non catégorisé"
+
+
+def test_sous_cat_autre_negatif_long_note_2() -> None:
+    assert sous_cat_autre(note=2, longueur_texte=30) == "négatif non catégorisé"
+
+
+def test_sous_cat_autre_neutre_note_3() -> None:
+    assert sous_cat_autre(note=3, longueur_texte=20) == "neutre"
+
+
+def test_sous_cat_autre_neutre_positif_long() -> None:
+    """Avis positif mais long → neutre (pas catégorisé comme positif court)."""
+    assert sous_cat_autre(note=5, longueur_texte=50) == "neutre"
+
+
+def test_sous_cat_autre_neutre_negatif_court() -> None:
+    """Avis négatif court → neutre (seuil longueur non atteint)."""
+    assert sous_cat_autre(note=1, longueur_texte=10) == "neutre"
+
+
+def test_sous_cat_autre_positif_thematique() -> None:
+    """Avis positif long avec marqueurs positifs → positif thématique."""
+    assert (
+        sous_cat_autre(
+            note=5, longueur_texte=25, texte="Application géniale, je recommande vivement"
+        )
+        == "positif thématique"
+    )
+
+
+def test_sous_cat_autre_positif_court_priorite_sur_thematique() -> None:
+    """Un avis court et positif reste 'positif court' même avec mots-clés positifs."""
+    assert sous_cat_autre(note=5, longueur_texte=5, texte="Super top génial") == "positif court"
+
+
+def test_sous_cat_autre_pas_thematique_si_note_basse() -> None:
+    """Mots-clés positifs mais note basse → pas positif thématique."""
+    assert sous_cat_autre(note=2, longueur_texte=25, texte="Super déçu") != "positif thématique"
+
+
+# --- detecter_sentiment_positif ---
+
+
+def test_detecter_positif_genial() -> None:
+    assert detecter_sentiment_positif("Application géniale") is True
+
+
+def test_detecter_positif_recommande() -> None:
+    assert detecter_sentiment_positif("Je recommande vivement") is True
+
+
+def test_detecter_positif_english() -> None:
+    assert detecter_sentiment_positif("Amazing app, love it!") is True
+
+
+def test_detecter_positif_vide() -> None:
+    assert detecter_sentiment_positif("") is False
+
+
+def test_detecter_positif_none() -> None:
+    assert detecter_sentiment_positif(None) is False
+
+
+def test_detecter_positif_negatif() -> None:
+    assert detecter_sentiment_positif("horrible expérience, nul") is False
+
+
+# --- evaluer_gravite_texte ---
+
+
+def test_gravite_texte_haute_arnaque() -> None:
+    assert evaluer_gravite_texte("C'est une arnaque totale") == "Haute"
+
+
+def test_gravite_texte_haute_tribunal() -> None:
+    assert evaluer_gravite_texte("Je vais porter plainte au tribunal") == "Haute"
+
+
+def test_gravite_texte_moyenne_probleme() -> None:
+    assert evaluer_gravite_texte("Beaucoup de problèmes avec cette app") == "Moyenne"
+
+
+def test_gravite_texte_moyenne_nul() -> None:
+    assert evaluer_gravite_texte("Service nul et inutile") == "Moyenne"
+
+
+def test_gravite_texte_basse_neutre() -> None:
+    assert evaluer_gravite_texte("Application correcte dans l'ensemble") == "Basse"
+
+
+def test_gravite_texte_basse_vide() -> None:
+    assert evaluer_gravite_texte("") == "Basse"
+
+
+def test_gravite_texte_negation() -> None:
+    """La négation 'pas une arnaque' ne doit pas déclencher Haute."""
+    assert evaluer_gravite_texte("ce n'est pas une arnaque") != "Haute"

@@ -45,6 +45,7 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "neo zelandaise",
             "nouvelle zelande",
             "vrbo",
+            "indicatif",
         ),
     ),
     (
@@ -61,6 +62,8 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "reservation refusee",
             "non garanti",
             "non confirme",
+            "pas disponible",
+            "n'est pas disponible",
             "confirmation de reservation",
             "calendrier",
             "disponibilite",
@@ -76,17 +79,23 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "remboursement",
             "rembourse",
             "rembours",
+            "refund",
             "paiement",
+            "payment",
             "payer",
+            "charged",
+            "overcharged",
             "frais",
             "facture",
             "prix",
             "tarif",
             "argent",
             "carte bancaire",
+            "credit card",
             "prelevement",
             "depot",
             "arnaque",
+            "scam",
             "escroquerie",
             "voleur",
             "commission",
@@ -107,18 +116,26 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "beug",
             "plante",
             "crash",
+            "crashes",
+            "glitch",
             "erreur",
             "ne fonctionne",
             "ne marche",
             " lent",  # espace pour éviter match dans "excellent" (e-x-c-e-**lent**)
             "lenteur",
-            "connexion",
+            "connexion impossible",
+            "perte de connexion",
+            "probleme de connexion",
+            "erreur de connexion",
             "mot de passe",
             "login",
             "chargement",
+            "loading",
             "mise a jour",
             "compatible",
             "figee",
+            "freeze",
+            "frozen",
             "bloque",
             "bloquer",
             "dysfonctionne",
@@ -126,11 +143,15 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "impossible d'ouvrir",
             "impossible de se connecter",
             "impossible de me connecter",
+            "can't connect",
+            "cannot connect",
             "notification",
             "page blanche",
             "ferme toute seule",
             "fonctionne pas",
             "marche pas",
+            "not working",
+            "doesn't work",
             "ne charge pas",
             "ne s'ouvre",
             "probleme technique",
@@ -143,6 +164,8 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "impossible de reserver",
             "n'arrive pas a acceder",
             "impossible d'utiliser",
+            "panne",
+            "formulaire",
         ),
     ),
     (
@@ -152,6 +175,8 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "ergonomique",
             "complique",
             "complexe",
+            "confusing",
+            "complicated",
             "mal fait",
             "mal pense",
             "pas pratique",
@@ -160,6 +185,9 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "on ne comprend",
             "comprend rien",
             "pas clair",
+            "hard to use",
+            "difficult to use",
+            "not intuitive",
             "difficile a utiliser",
             "labyrinthe",
             "convivial",
@@ -184,12 +212,16 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "on ne trouve rien",
             "trouve rien",
             "sans installer",
+            "utilisation difficile",
+            "captcha",
         ),
     ),
     (
         "Service Client",
         (
             "service client",
+            "customer service",
+            "customer support",
             "sav",
             "support",
             "assistance",
@@ -198,6 +230,9 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "joindre",
             "injoignable",
             "aucune reponse",
+            "no response",
+            "no reply",
+            "unanswered",
             "attente",
             "mail",
             "email",
@@ -212,6 +247,7 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "chatbot",
             "aucun suivi",
             "jamais rappele",
+            "ne publie",
         ),
     ),
     (
@@ -246,6 +282,9 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
         ),
     ),
 ]
+
+# Liste officielle (ordre des thèmes + « Autre » implicite hors mots-clés)
+CATEGORIES_ABRITEL: tuple[str, ...] = tuple(cat for cat, _ in _CATEGORIES_KEYWORDS) + ("Autre",)
 
 
 def categoriser_avis_multi(texte: str) -> list[str]:
@@ -312,3 +351,148 @@ def evaluer_gravite(texte: str, note: int, categorie: str = "") -> str:
             return "Haute"
         return "Moyenne"
     return "Basse"
+
+
+# --- Sous-catégorisation des avis « Autre » ---
+
+_AUTRE_POSITIF_COURT_NOTE_MIN = 4
+_AUTRE_POSITIF_COURT_MOTS_MAX = 15
+_AUTRE_NEGATIF_LONG_NOTE_MAX = 2
+_AUTRE_NEGATIF_LONG_MOTS_MIN = 30
+
+
+# --- Gravité indépendante (texte seul, sans note ni catégorie) ---
+
+_GRAVITE_TEXTE_HAUTE_KEYWORDS: tuple[str, ...] = (
+    "arnaque",
+    "escroquerie",
+    "escroc",
+    "fraude",
+    "scandale",
+    "honte",
+    "honteux",
+    "tribunal",
+    "justice",
+    "avocat",
+    "plainte",
+    "illegal",
+    "voleur",
+    "vol",
+    "voler",
+    "inadmissible",
+    "inacceptable",
+    "revolte",
+    "revoltant",
+    "degoutant",
+    "furieux",
+    "insupportable",
+    "odieux",
+    "catastrophe",
+    "catastrophique",
+    "danger",
+    "dangereux",
+    "insalubre",
+)
+
+_GRAVITE_TEXTE_MOYENNE_KEYWORDS: tuple[str, ...] = (
+    "probleme",
+    "galere",
+    "penible",
+    "nul",
+    "nulle",
+    "mauvais",
+    "mauvaise",
+    "horrible",
+    "lamentable",
+    "deplorable",
+    "decevant",
+    "deception",
+    "desastreux",
+    "mediocre",
+    "incompetent",
+    "inutile",
+    "ridicule",
+    "pire",
+    "terrible",
+    "awful",
+    "worst",
+    "useless",
+    "disgusting",
+    "pathetic",
+)
+
+
+def evaluer_gravite_texte(texte: str) -> str:
+    """Évalue la gravité à partir du texte seul, indépendamment de la note et de la catégorie.
+
+    Permet de casser la tautologie note→gravité en offrant un signal indépendant.
+    Retourne ``"Haute"``, ``"Moyenne"`` ou ``"Basse"``.
+    """
+    if not isinstance(texte, str) or not texte.strip():
+        return "Basse"
+    t = normaliser_texte(texte)
+    t_check = _NEGATION_RE.sub("", t)
+
+    if any(mot in t_check for mot in _GRAVITE_TEXTE_HAUTE_KEYWORDS):
+        return "Haute"
+    if any(mot in t_check for mot in _GRAVITE_TEXTE_MOYENNE_KEYWORDS):
+        return "Moyenne"
+    return "Basse"
+
+
+# --- Sous-catégorisation des avis « Autre » ---
+
+_POSITIVE_KEYWORDS: tuple[str, ...] = (
+    "genial",
+    "excellent",
+    "parfait",
+    "top",
+    "super",
+    "formidable",
+    "magnifique",
+    "fantastique",
+    "bravo",
+    "merci",
+    "satisfait",
+    "recommande",
+    "adore",
+    "love",
+    "great",
+    "amazing",
+    "perfect",
+    "awesome",
+    "wonderful",
+    "best",
+    "facile",
+    "pratique",
+    "rapide",
+    "fiable",
+    "impeccable",
+    "nickel",
+)
+
+
+def detecter_sentiment_positif(texte: str) -> bool:
+    """Détecte si un texte contient des marqueurs de sentiment positif."""
+    if not isinstance(texte, str) or not texte.strip():
+        return False
+    t = normaliser_texte(texte)
+    return any(mot in t for mot in _POSITIVE_KEYWORDS)
+
+
+def sous_cat_autre(note: int, longueur_texte: int, texte: str = "") -> str:
+    """Sous-catégorise un avis classé « Autre » selon la note, la longueur et le contenu.
+
+    Retourne :
+    - ``"positif court"``          : avis court et positif, non actionnable (bruit normal)
+    - ``"positif thématique"``     : avis positif détecté par mots-clés (note >= 4 + marqueurs)
+    - ``"négatif non catégorisé"`` : avis négatif long dont les mots-clés manquent dans le modèle
+    - ``"neutre"``                 : tous les autres cas
+    """
+    if note >= _AUTRE_POSITIF_COURT_NOTE_MIN and longueur_texte <= _AUTRE_POSITIF_COURT_MOTS_MAX:
+        return "positif court"
+    if note >= _AUTRE_POSITIF_COURT_NOTE_MIN and detecter_sentiment_positif(texte):
+        return "positif thématique"
+    if note <= _AUTRE_NEGATIF_LONG_NOTE_MAX and longueur_texte >= _AUTRE_NEGATIF_LONG_MOTS_MIN:
+        return "négatif non catégorisé"
+    return "neutre"
