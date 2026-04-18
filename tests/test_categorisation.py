@@ -111,8 +111,12 @@ def test_categoriser_forcer_telecharger() -> None:
 
 
 def test_categoriser_sans_installer() -> None:
-    # "impossible d'ouvrir" matche Bug Technique avant UX (first-match-wins)
-    assert categoriser_avis("Impossible d'ouvrir un lien sans installer l'appli") == "Bug Technique"
+    # Score-based : "sans installer" + "installer l'appli" → UX score=2 > Bug score=1
+    # Sémantiquement correct : c'est une friction UX (obligation d'installer l'app),
+    # pas un crash ou une erreur technique.
+    assert (
+        categoriser_avis("Impossible d'ouvrir un lien sans installer l'appli") == "UX / Ergonomie"
+    )
 
 
 def test_categoriser_currencies_english() -> None:

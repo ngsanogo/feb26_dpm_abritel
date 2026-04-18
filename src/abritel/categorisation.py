@@ -106,12 +106,11 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "bug",
             "beug",
             "plante",
-            "plante ",
             "crash",
             "erreur",
             "ne fonctionne",
             "ne marche",
-            " lent",
+            " lent",  # espace pour éviter match dans "excellent" (e-x-c-e-**lent**)
             "lenteur",
             "connexion",
             "mot de passe",
@@ -139,7 +138,8 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "impossible a utiliser",
             "pirater",
             "pirate",
-            "inscription",
+            "impossible de s'inscrire",
+            "inscription impossible",
             "impossible de reserver",
             "n'arrive pas a acceder",
             "impossible d'utiliser",
@@ -155,6 +155,7 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "mal fait",
             "mal pense",
             "pas pratique",
+            "peu pratique",
             "fastidieuse",
             "on ne comprend",
             "comprend rien",
@@ -168,7 +169,10 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "confus",
             "pas logique",
             "pas facile",
+            "pas simple",
             "pas ludique",
+            "mal organise",
+            "galere",
             "obliger de telecharger",
             "oblige de telecharger",
             "forcer a telecharger",
@@ -207,6 +211,7 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "agent virtuel",
             "chatbot",
             "aucun suivi",
+            "jamais rappele",
         ),
     ),
     (
@@ -235,28 +240,34 @@ _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
             "menage",
             "loueur",
             "parking",
+            "wifi",
+            "jardin",
+            "balcon",
         ),
     ),
 ]
 
 
-def categoriser_avis(texte: str) -> str:
-    """Retourne la catégorie principale (premier match, texte normalisé sans accents)."""
-    if not isinstance(texte, str) or not texte.strip():
-        return "Autre"
-    t = normaliser_texte(texte)
-    for categorie, mots in _CATEGORIES_KEYWORDS:
-        if any(mot in t for mot in mots):
-            return categorie
-    return "Autre"
-
-
 def categoriser_avis_multi(texte: str) -> list[str]:
-    """Retourne toutes les catégories matchées (liste vide → Autre)."""
+    """Retourne toutes les catégories matchées, triées par score décroissant.
+
+    Le score est le nombre de mots-clés de la catégorie présents dans le texte.
+    En cas d'égalité, l'ordre d'origine de ``_CATEGORIES_KEYWORDS`` est préservé
+    (tri stable). Retourne une liste vide si aucun match (→ "Autre").
+    """
     if not isinstance(texte, str) or not texte.strip():
         return []
     t = normaliser_texte(texte)
-    return [cat for cat, mots in _CATEGORIES_KEYWORDS if any(mot in t for mot in mots)]
+    scored = [(cat, sum(1 for mot in mots if mot in t)) for cat, mots in _CATEGORIES_KEYWORDS]
+    # Tri stable par score décroissant : les égalités conservent l'ordre de la liste
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [cat for cat, score in scored if score > 0]
+
+
+def categoriser_avis(texte: str) -> str:
+    """Retourne la catégorie principale (score maximal, ex-æquo → premier dans la liste)."""
+    cats = categoriser_avis_multi(texte)
+    return cats[0] if cats else "Autre"
 
 
 # --- Gravité ---
