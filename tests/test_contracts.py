@@ -16,6 +16,8 @@ from bs4 import BeautifulSoup
 APPSTORE_APP_ID = "642441300"
 TRUSTPILOT_URL = "https://fr.trustpilot.com/review/abritel.fr"
 GP_APP_ID = "com.vacationrentals.homeaway"
+_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+_HEADERS = {"User-Agent": _UA}
 
 
 @pytest.mark.slow
@@ -25,7 +27,7 @@ def test_appstore_rss_returns_entries() -> None:
         f"https://itunes.apple.com/fr/rss/customerreviews"
         f"/page=1/id={APPSTORE_APP_ID}/sortBy=mostRecent/json"
     )
-    resp = requests.get(url, timeout=15)
+    resp = requests.get(url, timeout=15, headers=_HEADERS)
     resp.raise_for_status()
     data = resp.json()
 
@@ -42,7 +44,7 @@ def test_appstore_rss_returns_entries() -> None:
 @pytest.mark.slow
 def test_trustpilot_has_next_data_script() -> None:
     """La page Trustpilot contient un <script id='__NEXT_DATA__'> avec des reviews."""
-    resp = requests.get(f"{TRUSTPILOT_URL}?stars=5&page=1", timeout=15)
+    resp = requests.get(f"{TRUSTPILOT_URL}?stars=5&page=1", timeout=15, headers=_HEADERS)
     resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "html.parser")
