@@ -416,3 +416,32 @@ def test_run_pipeline_circuit_breaker(mock_gp, mock_as, mock_tp, tmp_path: Path)
     # Le CSV doit toujours contenir les anciennes données Google Play
     df = pd.read_csv(csv_path, encoding="utf-8-sig")
     assert (df["source"] == "Google Play").sum() > 0
+
+
+@patch("abritel.pipeline.telecharger_avis_trustpilot")
+@patch("abritel.pipeline.telecharger_avis_app_store")
+@patch("abritel.pipeline.telecharger_avis_google_play")
+def test_run_pipeline_circuit_breaker_soft_ci(
+    mock_gp, mock_as, mock_tp, tmp_path: Path, capsys
+) -> None:
+    """ABRITEL_SOFT_CIRCUIT_BREAKER=1 : pas de SystemExit en CI, annotation GitHub sur stdout."""
+    mock_gp.return_value = _make_scraper_df("Google Play", 2)
+    mock_as.return_value = _make_scraper_df("App Store", 1)
+    mock_tp.return_value = _make_scraper_df("Trustpilot", 1)
+
+    csv_path = tmp_path / "avis_soft.csv"
+    run_pipeline(chemin_csv=csv_path, date_debut=date(2025, 1, 1))
+
+    mock_gp.return_value = pd.DataFrame(columns=["date", "note", "texte", "source"])
+    mock_as.return_value = _make_scraper_df("App Store", 1)
+    mock_tp.return_value = _make_scraper_df("Trustpilot", 1)
+
+    with patch.dict(
+        "os.environ",
+        {"CI": "true", "ABRITEL_SOFT_CIRCUIT_BREAKER": "1"},
+    ):
+        run_pipeline(chemin_csv=csv_path, date_debut=date(2025, 1, 1))
+
+    assert "::warning::" in capsys.readouterr().out
+    df = pd.read_csv(csv_path, encoding="utf-8-sig")
+    assert (df["source"] == "Google Play").sum() > 0

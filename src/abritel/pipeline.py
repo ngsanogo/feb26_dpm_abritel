@@ -28,9 +28,16 @@ from abritel.scraping import (
 
 LOG = logging.getLogger(__name__)
 
+# Marge calendaire (Europe/Paris) en mode incrémental : au-delà de la dernière date
+# CSV, on rescrape N jours en arrière (avis publiés en retard, décalage fuseau).
+# 7 jours limite les faux positifs du circuit breaker (0 avis sur une fenêtre trop courte).
+MARGE_JOURS_INCREMENTAL = 7
+_ENV_SOFT_CIRCUIT_BREAKER = "ABRITEL_SOFT_CIRCUIT_BREAKER"
+
 # Ré-export pour compatibilité des imports existants (1_pipeline.py, tests)
 __all__ = [
     "DATE_DEBUT_INCLUSIVE",
+    "MARGE_JOURS_INCREMENTAL",
     "avis_jour_paris",
     "categoriser_avis",
     "categoriser_avis_multi",
@@ -218,6 +225,12 @@ def _log_rapport(df: pd.DataFrame, n_ancien: int = 0) -> None:
             LOG.warning("   ⚠ ALERTE : 0 avis pour %s — vérifier le scraper", source)
 
 
+def _soft_circuit_breaker_ci() -> bool:
+    """Si vrai avec CI, un circuit breaker ne fait pas échouer le processus (exit 0)."""
+    v = (os.getenv(_ENV_SOFT_CIRCUIT_BREAKER) or "").strip().lower()
+    return v in {"1", "true", "yes", "on"}
+
+
 def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -> pd.DataFrame:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     LOG.info("=== Démarrage du pipeline Abritel (3 sources, France) ===")
@@ -229,13 +242,19 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
     if existant is not None and not existant.empty:
         n_ancien = len(existant)
         date_max = existant["date"].max()
-        # Scraper avec 3 jours de marge pour les avis publiés en retard
+        # Marge calendaire pour les avis publiés en retard / fuseau.
         # .date() sur UTC donnerait la date UTC ; on convertit en Paris
         # pour rester cohérent avec le filtrage des scrapers.
-        date_debut_incremental = date_max.tz_convert(TZ_FR).date() - timedelta(days=3)
+        date_debut_incremental = date_max.tz_convert(TZ_FR).date() - timedelta(
+            days=MARGE_JOURS_INCREMENTAL
+        )
         if date_debut_incremental > date_debut:
             date_debut = date_debut_incremental
-            LOG.info("   Mode incrémental : scraping depuis %s (3j de marge)", date_debut)
+            LOG.info(
+                "   Mode incrémental : scraping depuis %s (%sj de marge)",
+                date_debut,
+                MARGE_JOURS_INCREMENTAL,
+            )
 
     LOG.info("Période cible : %s → %s (Europe/Paris)", date_debut.isoformat(), fin.isoformat())
     LOG.info("")
@@ -274,18 +293,24 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
 
     # Circuit breaker : si une source retourne 0 avis en mode incrémental
     # alors qu'on en avait avant, c'est suspect (API cassée / structure changée).
-    breaker_triggered = False
+    sources_circuit_breaker: list[str] = []
     if existant is not None and not existant.empty:
         for nom, df_src in [("Google Play", df_gp), ("App Store", df_as), ("Trustpilot", df_tp)]:
             avait_avant = (existant["source"] == nom).sum() > 0
             a_maintenant = len(df_src) > 0
             if avait_avant and not a_maintenant:
-                breaker_triggered = True
+                sources_circuit_breaker.append(nom)
                 LOG.warning(
                     "   ⚠ CIRCUIT BREAKER : %s a retourné 0 avis alors qu'il en avait avant "
                     "— API potentiellement cassée. Le CSV existant est préservé pour cette source.",
                     nom,
                 )
+        if sources_circuit_breaker:
+            LOG.warning(
+                "   Diagnostic circuit breaker — source(s) à 0 avis ce run : %s",
+                ", ".join(sources_circuit_breaker),
+            )
+    breaker_triggered = bool(sources_circuit_breaker)
 
     # Fusion avec les données existantes
     if existant is not None and not existant.empty:
@@ -308,11 +333,23 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
 
     LOG.info("\n=== Pipeline terminé ===")
     if breaker_triggered:
+        detail = ", ".join(sources_circuit_breaker)
         msg = (
-            "⚠ Au moins une source a retourné 0 avis (circuit breaker). "
+            f"⚠ Circuit breaker ({detail}) : au moins une source a retourné 0 avis. "
             "Le CSV a été exporté avec les données existantes préservées."
         )
-        if os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true":
+        ci = os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
+        if ci and _soft_circuit_breaker_ci():
+            # Annotation visible dans l’onglet Actions sans faire échouer le job.
+            safe = msg.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+            print(f"::warning::{safe}", flush=True)
+            LOG.error(
+                "%s Mode %s=1 : exit 0 (commit / suite du workflow autorisés).",
+                msg,
+                _ENV_SOFT_CIRCUIT_BREAKER,
+            )
+            return out
+        if ci:
             LOG.error("%s Exit code 1 pour alerter CI.", msg)
             sys.exit(1)
         LOG.warning("%s", msg)
