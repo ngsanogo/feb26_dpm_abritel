@@ -7,7 +7,10 @@ import pandas as pd
 from abritel.categorisation import categoriser_avis_multi, evaluer_gravite
 from abritel.pipeline import (
     _charger_existant,
+    _detect_spikes,
+    _enrichir_version,
     _fusionner,
+    _keywords_hash,
     enrichir,
     exporter_csv,
     run_pipeline,
@@ -105,8 +108,13 @@ def test_enrichir_basic() -> None:
     assert "Catégorie" in result.columns
     assert "Gravité" in result.columns
     assert "Catégorie_secondaire" in result.columns
+    assert "Autre_type" in result.columns
+    assert "Catégorie_mots_cles" in result.columns
     assert result.iloc[0]["Catégorie"] == "Financier"
+    assert result.iloc[0]["Catégorie_mots_cles"] == "Financier"
     assert result.iloc[0]["Gravité"] == "Haute"
+    assert result.iloc[0]["Gravité_texte"] == "Haute"  # "arnaque" → Haute en texte seul aussi
+    assert result.iloc[0]["Autre_type"] == ""  # non-Autre → vide
 
 
 def test_enrichir_empty_df() -> None:
@@ -194,6 +202,43 @@ def test_fusionner_deduplication() -> None:
     assert "Catégorie" not in result.columns  # colonnes enrichies retirées
 
 
+def test_fusionner_preserves_ollama_cache() -> None:
+    """_fusionner conserve Catégorie_ollama de l'ancien CSV pour le cache incrémental."""
+    ancien = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2025-06-01T10:00:00+00:00"], utc=True),
+            "note": [1],
+            "texte": ["avis ancien"],
+            "source": ["Google Play"],
+            "Catégorie": ["Autre"],
+            "Catégorie_ollama": ["Financier"],  # résultat Ollama du run précédent
+            "Gravité": ["Haute"],
+        }
+    )
+    nouveau = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2025-06-05T08:00:00+00:00"], utc=True),
+            "note": [5],
+            "texte": ["avis nouveau"],
+            "source": ["App Store"],
+        }
+    )
+    result = _fusionner(ancien, nouveau)
+    assert len(result) == 2
+    assert "Catégorie_ollama" in result.columns  # cache préservé
+    # L'ancien avis garde son cache Ollama
+    ancien_row = result[result["texte"] == "avis ancien"].iloc[0]
+    assert ancien_row["Catégorie_ollama"] == "Financier"
+    # Le nouvel avis n'a pas de cache
+    import math
+
+    nouveau_row = result[result["texte"] == "avis nouveau"].iloc[0]
+    assert nouveau_row["Catégorie_ollama"] == "" or (
+        isinstance(nouveau_row["Catégorie_ollama"], float)
+        and math.isnan(nouveau_row["Catégorie_ollama"])
+    )
+
+
 def test_fusionner_sort_descending() -> None:
     ancien = pd.DataFrame(
         {
@@ -229,9 +274,13 @@ def test_valider_dataframe_valid() -> None:
             "texte": ["Un avis normal"],
             "source": ["Google Play"],
             "longueur_texte": [3],
+            "n_caracteres": [14],
             "Catégorie": ["Autre"],
             "Catégorie_secondaire": [""],
+            "Catégorie_mots_cles": ["Autre"],
             "Gravité": ["Basse"],
+            "Gravité_texte": ["Basse"],
+            "Autre_type": ["neutre"],
         }
     )
     assert valider_dataframe(df) == []
@@ -245,9 +294,13 @@ def test_valider_dataframe_note_hors_bornes() -> None:
             "texte": ["test"],
             "source": ["Google Play"],
             "longueur_texte": [1],
+            "n_caracteres": [4],
             "Catégorie": ["Autre"],
             "Catégorie_secondaire": [""],
+            "Catégorie_mots_cles": ["Autre"],
             "Gravité": ["Basse"],
+            "Gravité_texte": ["Basse"],
+            "Autre_type": ["neutre"],
         }
     )
     anomalies = valider_dataframe(df)
@@ -262,9 +315,13 @@ def test_valider_dataframe_categorie_inconnue() -> None:
             "texte": ["test"],
             "source": ["Google Play"],
             "longueur_texte": [1],
+            "n_caracteres": [4],
             "Catégorie": ["Inventée"],
             "Catégorie_secondaire": [""],
+            "Catégorie_mots_cles": ["Inventée"],
             "Gravité": ["Basse"],
+            "Gravité_texte": ["Basse"],
+            "Autre_type": [""],
         }
     )
     anomalies = valider_dataframe(df)
@@ -279,9 +336,13 @@ def test_valider_dataframe_empty() -> None:
             "texte",
             "source",
             "longueur_texte",
+            "n_caracteres",
             "Catégorie",
             "Catégorie_secondaire",
+            "Catégorie_mots_cles",
             "Gravité",
+            "Gravité_texte",
+            "Autre_type",
         ]
     )
     assert valider_dataframe(df) == []
@@ -379,6 +440,9 @@ def test_run_pipeline_e2e(mock_gp, mock_as, mock_tp, tmp_path: Path) -> None:
     assert set(result["source"].unique()) == {"Google Play", "App Store", "Trustpilot"}
     assert "Catégorie" in result.columns
     assert "Gravité" in result.columns
+    assert "Autre_type" in result.columns
+    assert "Catégorie_mots_cles" in result.columns
+    assert "Catégorie_ollama" in result.columns
     assert valider_dataframe(result) == []
 
 
@@ -428,6 +492,208 @@ def test_run_pipeline_circuit_breaker(mock_gp, mock_as, mock_tp, tmp_path: Path)
     # Le CSV doit toujours contenir les anciennes données Google Play
     df = pd.read_csv(csv_path, encoding="utf-8-sig")
     assert (df["source"] == "Google Play").sum() > 0
+
+
+# --- Autre_type dans enrichir ---
+
+
+def test_enrichir_autre_type_positif_court() -> None:
+    """Un avis Autre court avec note 5 → Autre_type = 'positif court'."""
+    df = pd.DataFrame(
+        {
+            "date": [datetime(2025, 6, 1, tzinfo=UTC)],
+            "note": [5],
+            "texte": ["Super top"],  # 2 mots, note 5 → positif court
+            "source": ["Google Play"],
+        }
+    )
+    result = enrichir(df)
+    assert result.iloc[0]["Catégorie"] == "Autre"
+    assert result.iloc[0]["Autre_type"] == "positif court"
+
+
+def test_enrichir_autre_type_negatif_long() -> None:
+    """Un avis Autre long avec note 1 → Autre_type = 'négatif non catégorisé'."""
+    texte_long = " ".join(["mot"] * 35)  # 35 mots, sans mots-clés
+    df = pd.DataFrame(
+        {
+            "date": [datetime(2025, 6, 1, tzinfo=UTC)],
+            "note": [1],
+            "texte": [texte_long],
+            "source": ["Trustpilot"],
+        }
+    )
+    result = enrichir(df)
+    assert result.iloc[0]["Catégorie"] == "Autre"
+    assert result.iloc[0]["Autre_type"] == "négatif non catégorisé"
+
+
+def test_enrichir_autre_type_vide_pour_non_autre() -> None:
+    """Un avis catégorisé (non Autre) a Autre_type vide."""
+    df = pd.DataFrame(
+        {
+            "date": [datetime(2025, 6, 1, tzinfo=UTC)],
+            "note": [1],
+            "texte": ["Remboursement refusé, arnaque totale"],
+            "source": ["Trustpilot"],
+        }
+    )
+    result = enrichir(df)
+    assert result.iloc[0]["Catégorie"] == "Financier"
+    assert result.iloc[0]["Autre_type"] == ""
+
+
+# --- _detect_spikes ---
+
+
+def _make_weekly_df(weeks: int, cat_normal: str = "Bug Technique") -> pd.DataFrame:
+    """Génère un DataFrame avec `weeks` semaines d'avis équilibrés entre 2 catégories."""
+    rows = []
+    base = datetime(2025, 1, 6, tzinfo=UTC)  # mardi
+    for w in range(weeks):
+        for _ in range(10):
+            rows.append(
+                {
+                    "date": base + pd.Timedelta(weeks=w),
+                    "note": 3,
+                    "texte": "avis neutre",
+                    "source": "Google Play",
+                    "Catégorie": cat_normal,
+                }
+            )
+        for _ in range(5):
+            rows.append(
+                {
+                    "date": base + pd.Timedelta(weeks=w),
+                    "note": 4,
+                    "texte": "ok",
+                    "source": "App Store",
+                    "Catégorie": "Autre",
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def test_detect_spikes_no_spike_stable_data() -> None:
+    df = _make_weekly_df(6)
+    assert _detect_spikes(df) == []
+
+
+def test_detect_spikes_insufficient_history() -> None:
+    df = _make_weekly_df(3)  # < 5 semaines
+    assert _detect_spikes(df) == []
+
+
+def test_detect_spikes_detects_spike() -> None:
+    """Injecte un spike clair la dernière semaine sur une catégorie.
+
+    Les semaines historiques ont une légère variance pour que stdev > 0.
+    """
+    rows = []
+    base = datetime(2025, 1, 6, tzinfo=UTC)
+    # 5 semaines avec variance : Bug entre 2 et 4 avis sur 15 → ~15-27%
+    bug_counts_history = [2, 3, 4, 2, 3]
+    for w, n_bug in enumerate(bug_counts_history):
+        for _ in range(n_bug):
+            rows.append({"date": base + pd.Timedelta(weeks=w), "Catégorie": "Bug Technique"})
+        for _ in range(15 - n_bug):
+            rows.append({"date": base + pd.Timedelta(weeks=w), "Catégorie": "Autre"})
+    # Semaine 5 (courante) : spike Bug à 90% (vs ~20% habituel) — largement > 2σ + 5pts
+    for _ in range(18):
+        rows.append({"date": base + pd.Timedelta(weeks=5), "Catégorie": "Bug Technique"})
+    for _ in range(2):
+        rows.append({"date": base + pd.Timedelta(weeks=5), "Catégorie": "Autre"})
+
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"], utc=True)
+    alertes = _detect_spikes(df)
+    assert any("Bug Technique" in a for a in alertes)
+
+
+def test_detect_spikes_empty_df() -> None:
+    assert _detect_spikes(pd.DataFrame()) == []
+
+
+# --- _keywords_hash ---
+
+
+def test_keywords_hash_returns_8_chars() -> None:
+    h = _keywords_hash()
+    assert isinstance(h, str)
+    assert len(h) == 8
+
+
+def test_keywords_hash_stable() -> None:
+    assert _keywords_hash() == _keywords_hash()
+
+
+# --- _enrichir_version ---
+
+
+def test_enrichir_version_adds_column(tmp_path: Path) -> None:
+    """Ajoute version_release en fonction de la date de l'avis (avec délai de grâce)."""
+    releases = tmp_path / "releases.csv"
+    releases.write_text(
+        "date,version,plateforme,description\n"
+        "2025-01-01,25.01,iOS,init\n"
+        "2025-06-01,25.06,iOS,update\n"
+    )
+    df = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                ["2025-03-15T10:00:00+00:00", "2025-07-01T10:00:00+00:00"], utc=True
+            ),
+            "note": [3, 5],
+            "texte": ["ok", "super"],
+            "source": ["Google Play", "App Store"],
+        }
+    )
+    result = _enrichir_version(df, releases)
+    assert "version_release" in result.columns
+    assert result.iloc[0]["version_release"] == "25.01"  # avant 25.06
+    assert result.iloc[1]["version_release"] == "25.06"  # après 25.06 + grâce
+
+
+def test_enrichir_version_grace_period(tmp_path: Path) -> None:
+    """Un avis publié 1 jour après une release est attribué à la version précédente."""
+    releases = tmp_path / "releases.csv"
+    releases.write_text(
+        "date,version,plateforme,description\n"
+        "2025-01-01,25.01,iOS,init\n"
+        "2025-06-01,25.06,iOS,update\n"
+    )
+    df = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                ["2025-06-02T10:00:00+00:00"],
+                utc=True,  # 1 jour après release 25.06
+            ),
+            "note": [3],
+            "texte": ["ok"],
+            "source": ["Google Play"],
+        }
+    )
+    # Avec grâce de 2 jours : 2025-06-02 < 2025-06-01 + 2j → version précédente
+    result = _enrichir_version(df, releases, grace_days=2)
+    assert result.iloc[0]["version_release"] == "25.01"
+
+    # Sans grâce : 2025-06-02 > 2025-06-01 → version 25.06
+    result_no_grace = _enrichir_version(df.copy(), releases, grace_days=0)
+    assert result_no_grace.iloc[0]["version_release"] == "25.06"
+
+
+def test_enrichir_version_no_file(tmp_path: Path) -> None:
+    """Sans fichier releases.csv, pas de colonne ajoutée."""
+    df = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2025-03-15T10:00:00+00:00"], utc=True),
+            "note": [3],
+            "texte": ["ok"],
+            "source": ["Google Play"],
+        }
+    )
+    result = _enrichir_version(df, tmp_path / "releases.csv")
+    assert "version_release" not in result.columns
 
 
 @patch("abritel.pipeline.telecharger_avis_trustpilot")
