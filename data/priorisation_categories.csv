@@ -1,9 +1,9 @@
-Catégorie,volume,note_moyenne,pct_haute,score,ref_mediane_volume,ref_mediane_pct_haute
-Financier,122,1.39,90.16,110.0,86.5,84.935
-Annulation / Réservation,102,1.1,99.02,101.0,86.5,84.935
-Localisation / Langue,101,1.36,84.16,85.0,86.5,84.935
-Bug Technique,51,1.45,90.2,46.0,86.5,84.935
-Service Client,49,1.43,85.71,42.0,86.5,84.935
-Qualité du bien,72,2.4,56.94,41.0,86.5,84.935
-UX / Ergonomie,33,1.73,66.67,22.0,86.5,84.935
-Autre,185,4.4,8.65,16.0,86.5,84.935
+Catégorie,volume,note_moyenne,pct_haute,score,mediane_volume,mediane_pct_haute
+Financier,125,1.35,91.2,114.0,70.0,83.76499999999999
+Qualité du bien,128,1.89,72.66,93.0,70.0,83.76499999999999
+Localisation / Langue,77,1.44,81.82,63.0,70.0,83.76499999999999
+Service Client,63,1.33,85.71,54.0,70.0,83.76499999999999
+Annulation / Réservation,54,1.17,98.15,53.0,70.0,83.76499999999999
+Bug Technique,50,1.36,92.0,46.0,70.0,83.76499999999999
+UX / Ergonomie,33,1.67,69.7,23.0,70.0,83.76499999999999
+Autre,187,4.39,9.09,17.0,70.0,83.76499999999999

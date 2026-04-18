@@ -1,22 +1,38 @@
-Catégorie,Catégorie_secondaire,effectif
-Annulation / Réservation,Financier,63
-Financier,Service Client,37
-Localisation / Langue,Financier,34
-Financier,Qualité du bien,31
-Service Client,Qualité du bien,24
-Financier,Bug Technique,19
-Bug Technique,Qualité du bien,13
-Annulation / Réservation,Service Client,13
-Localisation / Langue,Annulation / Réservation,10
-Annulation / Réservation,Qualité du bien,9
-Annulation / Réservation,Bug Technique,9
-Financier,UX / Ergonomie,8
-Localisation / Langue,Service Client,6
-Bug Technique,Service Client,6
-Localisation / Langue,Bug Technique,5
+Catégorie,Catégorie_secondaire,Effectif
+Financier,Qualité du bien,40
+Annulation / Réservation,Financier,21
+Financier,Service Client,20
+Qualité du bien,Financier,20
+Localisation / Langue,Financier,19
+Financier,Annulation / Réservation,19
+Service Client,Qualité du bien,17
+Service Client,Financier,16
+Qualité du bien,Service Client,16
+Bug Technique,Qualité du bien,15
+Qualité du bien,Annulation / Réservation,12
+Annulation / Réservation,Qualité du bien,12
+Annulation / Réservation,Service Client,10
+Financier,Bug Technique,9
+Financier,UX / Ergonomie,6
+Localisation / Langue,Bug Technique,6
 Bug Technique,UX / Ergonomie,5
+Localisation / Langue,Service Client,5
+Financier,Localisation / Langue,4
+Bug Technique,Service Client,4
 UX / Ergonomie,Qualité du bien,4
+Qualité du bien,Localisation / Langue,4
 Localisation / Langue,UX / Ergonomie,3
-UX / Ergonomie,Service Client,3
+Qualité du bien,UX / Ergonomie,2
+Service Client,Annulation / Réservation,2
+Annulation / Réservation,Bug Technique,2
+Qualité du bien,Bug Technique,2
 Localisation / Langue,Qualité du bien,2
 Annulation / Réservation,UX / Ergonomie,2
+UX / Ergonomie,Service Client,2
+Localisation / Langue,Annulation / Réservation,1
+Bug Technique,Financier,1
+Service Client,Bug Technique,1
+Bug Technique,Annulation / Réservation,1
+Service Client,Localisation / Langue,1
+Service Client,UX / Ergonomie,1
+Annulation / Réservation,Localisation / Langue,1

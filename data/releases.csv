@@ -1,0 +1,20 @@
+date,version,plateforme,description
+2024-10-01,24.10.0,iOS+Android,Release initiale fenêtre de collecte
+2024-11-15,24.11.0,Android,Correctifs stabilité
+2024-12-10,24.12.0,iOS+Android,Refonte page de recherche
+2025-01-20,25.01.0,Android,Fix crashs connexion signalés GP
+2025-02-18,25.02.0,iOS+Android,Nouveau système de notifications
+2025-03-11,25.03.0,iOS+Android,Refonte politique d'annulation (UI)
+2025-04-08,25.04.0,Android,Fix paiement — remboursements automatiques
+2025-05-14,25.05.0,iOS+Android,Correctifs traductions (FR/EN/DE)
+2025-06-03,25.06.0,iOS+Android,Améliorations performance chargement
+2025-07-22,25.07.0,Android,Fix calendrier disponibilité
+2025-08-12,25.08.0,iOS+Android,Nouveau filtre recherche avancée
+2025-09-09,25.09.0,iOS+Android,Refonte service client — chatbot IA
+2025-10-07,25.10.0,Android,Correctifs divers
+2025-11-18,25.11.0,iOS+Android,Mise à jour politique caution
+2025-12-02,25.12.0,iOS+Android,Fix bug écran blanc connexion
+2026-01-14,26.01.0,iOS+Android,Nouveau parcours réservation
+2026-02-11,26.02.0,Android,Fix authentification SSO
+2026-03-04,26.03.0,iOS+Android,Correctifs UX formulaire paiement
+2026-04-01,26.04.0,iOS+Android,Refonte page propriété
