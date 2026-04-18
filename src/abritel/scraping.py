@@ -7,7 +7,7 @@ import logging
 import random
 import threading
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -18,9 +18,9 @@ from google_play_scraper import Sort, reviews
 LOG = logging.getLogger(__name__)
 
 TZ_FR = ZoneInfo("Europe/Paris")
-# Fenêtre glissante de 18 mois : assez pour couvrir un cycle saisonnier complet
-# (location vacances) tout en restant pertinent par rapport au produit actuel.
-DATE_DEBUT_INCLUSIVE = datetime.now(TZ_FR).date().replace(day=1) - timedelta(days=18 * 30)
+# Date de début fixe : collecte exhaustive de tous les avis depuis le 01/01/2025.
+# Ne pas modifier — c'est le référentiel de l'analyse produit.
+DATE_DEBUT_INCLUSIVE = date(2025, 1, 1)
 
 # --- Constantes sources ---
 
@@ -118,8 +118,11 @@ def _backoff_delay(attempt: int, err: requests.RequestException) -> float:
     return min(2**attempt + random.uniform(0, 0.5), 10)
 
 
-def _http_get(url: str, *, parse_json: bool = False, timeout_s: int = 15, tentatives: int = 3):
-    """GET avec retries et backoff exponentiel. Retourne JSON (dict) ou texte (str), ou None."""
+def _http_get(url: str, *, parse_json: bool = False, timeout_s: int = 15, tentatives: int = 5):
+    """GET avec retries et backoff exponentiel. Retourne JSON (dict) ou texte (str), ou None.
+
+    Avec 5 tentatives, le backoff atteint ~10s au 4e retry (cap actif).
+    """
     session = _get_session()
     last_err: Exception | None = None
     for i in range(tentatives):
@@ -135,12 +138,12 @@ def _http_get(url: str, *, parse_json: bool = False, timeout_s: int = 15, tentat
     return None
 
 
-def get_json(url: str, *, timeout_s: int = 15, tentatives: int = 3) -> dict | None:
+def get_json(url: str, *, timeout_s: int = 15, tentatives: int = 5) -> dict | None:
     """GET JSON avec retries et backoff exponentiel."""
     return _http_get(url, parse_json=True, timeout_s=timeout_s, tentatives=tentatives)
 
 
-def get_text(url: str, *, timeout_s: int = 15, tentatives: int = 3) -> str | None:
+def get_text(url: str, *, timeout_s: int = 15, tentatives: int = 5) -> str | None:
     """GET HTML/text avec retries et backoff exponentiel."""
     return _http_get(url, parse_json=False, timeout_s=timeout_s, tentatives=tentatives)
 
@@ -167,7 +170,7 @@ def telecharger_avis_google_play(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> 
 
     while pages < GP_PAGES_MAX:
         lot: list[dict] = []
-        for tentative in range(3):
+        for tentative in range(5):
             try:
                 lot, token = reviews(
                     GP_APP_ID,
@@ -179,8 +182,8 @@ def telecharger_avis_google_play(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> 
                 )
                 break
             except (requests.RequestException, ValueError, TypeError) as e:
-                if tentative == 2:
-                    LOG.warning("Google Play — erreur après 3 tentatives: %s", e)
+                if tentative == 4:
+                    LOG.warning("Google Play — erreur après 5 tentatives: %s", e)
                 time.sleep(min(2**tentative + random.uniform(0, 0.5), 10))
         pages += 1
         if not lot:
