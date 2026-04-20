@@ -1,6 +1,6 @@
 # Abritel — Donnees & analyse (MVP Data / Produit)
 
-Collecte d'avis depuis **3 sources** (Google Play, App Store, Trustpilot) pour Abritel sur une **fenetre glissante de 18 mois**, enrichissement lexical (categorie + gravite), export **CSV** pour **Power BI**. Le pipeline est **incremental** : chaque execution ne re-scrape que les avis recents et fusionne avec l'historique existant. L'analyse est dans **`2_analyse_complete.ipynb`**.
+Collecte d'avis depuis **3 sources** (Google Play, App Store, Trustpilot) pour Abritel **depuis le 01/01/2025** (date fixe), enrichissement lexical (categorie + gravite), export **CSV** pour **Power BI**. Le pipeline est **incremental** : chaque execution ne re-scrape que les avis recents et fusionne avec l'historique existant. L'analyse est dans **`2_analyse_complete.ipynb`**.
 
 ## Sources de donnees
 
