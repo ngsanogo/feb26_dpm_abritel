@@ -206,6 +206,29 @@ def test_categoriser_indicatif_localisation() -> None:
     )
 
 
+# --- Negation handling in categorisation ---
+
+
+def test_categoriser_negation_arnaque_not_financier() -> None:
+    """'Pas une arnaque' ne doit pas matcher Financier si c'est le seul signal."""
+    assert categoriser_avis("Ce n'est pas une arnaque, juste un mauvais service") != "Financier"
+
+
+def test_categoriser_negation_scam_not_financier() -> None:
+    """'Not a scam' ne doit pas matcher Financier si c'est le seul signal."""
+    assert categoriser_avis("Not a scam but very slow service") != "Financier"
+
+
+def test_categoriser_negation_preserves_real_signal() -> None:
+    """Un vrai signal Financier doit encore matcher malgré une négation à côté."""
+    assert categoriser_avis("Pas une arnaque mais remboursement jamais reçu") == "Financier"
+
+
+def test_categoriser_negation_pas_complique_not_ux() -> None:
+    """'Pas compliqué' ne doit pas matcher UX (l'utilisateur dit que c'est simple)."""
+    assert categoriser_avis("L'app n'est pas compliquée") != "UX / Ergonomie"
+
+
 # --- sous_cat_autre ---
 
 
