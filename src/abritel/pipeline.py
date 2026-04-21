@@ -18,6 +18,7 @@ import pandas as pd
 
 from abritel.categorisation import (
     _CATEGORIES_KEYWORDS,
+    _NEGATION_CAT_RE,
     CATEGORIES_ABRITEL,
     categoriser_avis,
     categoriser_avis_multi,
@@ -83,7 +84,7 @@ def _keywords_hash() -> str:
     Détecte les changements de keywords entre deux runs successifs et permet de
     tracer les re-catégorisations dans pipeline_meta.json.
     """
-    raw = str(_CATEGORIES_KEYWORDS).encode()
+    raw = str(_CATEGORIES_KEYWORDS).encode() + _NEGATION_CAT_RE.pattern.encode()
     return hashlib.md5(raw).hexdigest()[:8]  # noqa: S324 — non cryptographique, traçabilité seule
 
 
