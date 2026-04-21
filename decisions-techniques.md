@@ -33,6 +33,8 @@ Nous avons choisi la décomposition Unicode NFD (qui sépare "é" en "e" + accen
 
 Nous comptons le nombre de mots-clés de chaque catégorie présents dans le texte, et la catégorie avec le score le plus élevé l'emporte. Nous avons choisi cette approche parce qu'elle est simple à comprendre, à déboguer et à maintenir. Elle est robuste à la longueur variable des avis et permet naturellement la multi-catégorisation (si un avis parle de remboursement ET de bug, les deux catégories sont capturées dans `Catégorie` et `Catégorie_secondaire`). En cas d'égalité de score, l'ordre de la liste de mots-clés sert de tie-breaking déterministe.
 
+Avant le comptage, nous retirons les expressions niées du texte (`_NEGATION_CAT_RE`) pour éviter les faux positifs : « ce n'est pas une arnaque » ne doit pas matcher Financier. La regex couvre les négations françaises (pas, plus, jamais, aucun, ni) et anglaises (not, no) suivies de mots-cl��s à haut risque de faux positifs (arnaque, scam, bug, compliqué…). Les mots-clés courants (remboursement, paiement) ne sont pas dans cette liste car leur négation est généralement une plainte légitime (« pas de remboursement »).
+
 ---
 
 ## 5. Ordre de priorité des catégories
@@ -186,9 +188,13 @@ Nous exportons en UTF-8-SIG (UTF-8 avec BOM) parce que c'est la variante reconnu
 
 ---
 
-## 20. CI/CD quotidien via GitHub Actions
+## 20. CI via GitHub Actions
 
-Nous avons choisi un run quotidien (chaque jour à 20h UTC) parce que les avis sont publiés en continu et qu'un run hebdomadaire créerait des fenêtres de données manquantes et ralentirait la détection de spikes. Ollama est désactivé en CI parce que les runners GitHub n'ont pas de GPU — seule la catégorisation par mots-clés est utilisée. Pas de notification Slack : le circuit breaker (exit code 1) crée une alerte visible dans l'onglet Actions.
+Nous avons deux workflows CI :
+- **ci.yml** (push + PR) : lint Ruff + tests unitaires (`pytest -m "not slow"`)
+- **contract-tests.yml** (lundi 8h UTC + déclenchement manuel) : tests d'API contract (`pytest -m slow`)
+
+Le pipeline de scraping (`1_pipeline.py`) est exécuté manuellement en local quand nous avons besoin de données fraîches. Ollama est désactivé en CI parce que les runners GitHub n'ont pas de GPU — seule la catégorisation par mots-clés serait utilisée si le pipeline tournait en CI.
 
 ---
 
