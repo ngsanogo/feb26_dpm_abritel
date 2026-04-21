@@ -1,6 +1,6 @@
 # Abritel — Donnees & analyse (MVP Data / Produit)
 
-Collecte d'avis depuis **3 sources** (Google Play, App Store, Trustpilot) pour Abritel **depuis le 01/01/2025** (date fixe), enrichissement lexical (categorie + gravite), export **CSV** pour **Power BI**. Le pipeline est **incremental** : chaque execution ne re-scrape que les avis recents et fusionne avec l'historique existant. L'analyse est dans **`2_analyse_complete.ipynb`**.
+Collecte d'avis depuis **3 sources** (Google Play, App Store, Trustpilot) pour Abritel **depuis le 01/01/2025** (date fixe), enrichissement lexical (categorie + gravite), export **CSV** pour **Power BI**. Le pipeline est **incremental** : chaque execution ne re-scrape que les avis recents et fusionne avec l'historique existant. L'analyse est dans **`2_analyse.ipynb`**.
 
 ## Sources de donnees
 
@@ -44,7 +44,7 @@ uv run python 1_pipeline.py
 
 ### Notebook dans Cursor
 
-Ouvre **`2_analyse_complete.ipynb`** dans Cursor, selectionne l'interpreteur **`.venv/bin/python`** (palette de commandes -> *Python: Select Interpreter*), puis execute les cellules ou *Run All*. Le paquet **`ipykernel`** dans le venv suffit pour que l'editeur pilote le notebook.
+Ouvre **`2_analyse.ipynb`** dans Cursor, selectionne l'interpreteur **`.venv/bin/python`** (palette de commandes -> *Python: Select Interpreter*), puis execute les cellules ou *Run All*. Le paquet **`ipykernel`** dans le venv suffit pour que l'editeur pilote le notebook.
 
 ## Power BI
 
@@ -58,7 +58,7 @@ Importer **`data/avis_enrichis.csv`** (UTF-8-SIG). Mesures et definitions : voir
 | `uv.lock` | Versions figees (a committer pour l'equipe) |
 | `.python-version` | Version Python cible pour `uv python install` |
 | `1_pipeline.py` | Scraping 3 sources + categorisation -> CSV |
-| `2_analyse_complete.ipynb` | Analyse complete |
+| `2_analyse.ipynb` | Analyse complete |
 
 ## Colonnes du CSV
 
@@ -79,6 +79,8 @@ Toutes les colonnes sont **toujours presentes** dans le CSV (schema fixe pour Po
 | `Gravité` | Haute, Moyenne, Basse |
 | `Gravité_texte` | Gravite evaluee uniquement sur le texte (independante de la note et de la categorie) |
 | `Autre_type` | Pour les avis « Autre » : `positif court` / `positif thematique` / `negatif non categorise` / `neutre` (vide sinon) |
+| `type_avis` | Sentiment : `positif` (note >= 4), `negatif` (note <= 2), `neutre` (note = 3) |
+| `profil_auteur` | Persona : `Locataire` ou `Proprietaire` (detection par mots-cles dans le texte) |
 | `version_release` | Version de l’app active au moment de l’avis (croisee avec `data/releases.csv`) |
 
 ### Double categorisation : mots-cles + LLM
