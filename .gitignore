@@ -32,7 +32,7 @@ data/synthese_*.csv
 data/priorisation_*.csv
 
 # Export HTML du notebook (généré, ~3 MB)
-2_analyse_complete.html
+2_analyse.html
 
 # Binaires bureautiques
 *.pbix
