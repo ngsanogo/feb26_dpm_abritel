@@ -170,8 +170,9 @@ def _trustpilot_review(rating: int, published: str, title: str, text: str) -> di
 
 
 @responses.activate
+@patch("abritel.scraping._playwright_disponible", return_value=False)
 @patch("abritel.scraping.time.sleep")
-def test_telecharger_trustpilot_basic(mock_sleep) -> None:
+def test_telecharger_trustpilot_basic(mock_sleep, _mock_pw) -> None:
     review = _trustpilot_review(1, "2025-06-10T10:00:00Z", "Nul", "Service affreux")
 
     # Register URLs for all 5 star filters × pages
@@ -191,8 +192,9 @@ def test_telecharger_trustpilot_basic(mock_sleep) -> None:
 
 
 @responses.activate
+@patch("abritel.scraping._playwright_disponible", return_value=False)
 @patch("abritel.scraping.time.sleep")
-def test_telecharger_trustpilot_deduplicates(mock_sleep) -> None:
+def test_telecharger_trustpilot_deduplicates(mock_sleep, _mock_pw) -> None:
     review = _trustpilot_review(3, "2025-06-10T10:00:00Z", "Ok", "Moyen")
 
     for stars in range(1, 6):

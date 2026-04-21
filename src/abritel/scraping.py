@@ -277,7 +277,22 @@ def telecharger_avis_app_store(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> pd
     return out
 
 
-def _trustpilot_pages(params: str, *, date_debut: date = DATE_DEBUT_INCLUSIVE) -> list[dict]:
+def _trustpilot_get_html(page_obj, url: str) -> str | None:
+    """Charge une page Trustpilot via Playwright (contourne AWS WAF)."""
+    try:
+        page_obj.goto(url, wait_until="networkidle", timeout=30_000)
+        return page_obj.content()
+    except Exception as e:
+        LOG.warning("Playwright — échec pour %s: %s", url, e)
+        return None
+
+
+def _trustpilot_pages(
+    params: str,
+    *,
+    date_debut: date = DATE_DEBUT_INCLUSIVE,
+    _pw_page=None,
+) -> list[dict]:
     """Pagine Trustpilot (max TRUSTPILOT_PAGES_PAR_FILTRE) pour un jeu de paramètres."""
     fin = date_fin_inclusive()
     lignes: list[dict] = []
@@ -289,7 +304,11 @@ def _trustpilot_pages(params: str, *, date_debut: date = DATE_DEBUT_INCLUSIVE) -
             if params
             else f"{TRUSTPILOT_URL}?page={page}"
         )
-        html = get_text(url, timeout_s=15, tentatives=3)
+
+        if _pw_page is not None:
+            html = _trustpilot_get_html(_pw_page, url)
+        else:
+            html = get_text(url, timeout_s=15, tentatives=3)
         if html is None:
             break
 
@@ -338,16 +357,48 @@ def _trustpilot_pages(params: str, *, date_debut: date = DATE_DEBUT_INCLUSIVE) -
     return lignes
 
 
-def telecharger_avis_trustpilot(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> pd.DataFrame:
-    """Pagination par filtre d'étoiles (1-5) pour maximiser la couverture."""
-    lignes: list[dict] = []
+def _playwright_disponible() -> bool:
+    """Vérifie si Playwright + Chromium sont installés."""
+    try:
+        from playwright.sync_api import sync_playwright  # noqa: F401
 
-    for stars in range(1, 6):
-        if stars > 1:
-            time.sleep(3 + random.uniform(0, 1))
-        batch = _trustpilot_pages(f"stars={stars}", date_debut=date_debut)
-        lignes.extend(batch)
-        LOG.info("Trustpilot: %s étoile(s): %s avis", stars, len(batch))
+        return True
+    except ImportError:
+        return False
+
+
+def telecharger_avis_trustpilot(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> pd.DataFrame:
+    """Pagination par filtre d'étoiles (1-5).
+
+    Utilise Playwright (headless Chromium) pour contourner le challenge AWS WAF
+    de Trustpilot. Fallback sur requests si Playwright n'est pas installé.
+    """
+    lignes: list[dict] = []
+    use_pw = _playwright_disponible()
+
+    if use_pw:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            pw_page = browser.new_page()
+
+            for stars in range(1, 6):
+                if stars > 1:
+                    time.sleep(2 + random.uniform(0, 1))
+                batch = _trustpilot_pages(f"stars={stars}", date_debut=date_debut, _pw_page=pw_page)
+                lignes.extend(batch)
+                LOG.info("Trustpilot: %s étoile(s): %s avis", stars, len(batch))
+
+            browser.close()
+    else:
+        LOG.info("Playwright non disponible — fallback sur requests (peut échouer si WAF actif)")
+        for stars in range(1, 6):
+            if stars > 1:
+                time.sleep(3 + random.uniform(0, 1))
+            batch = _trustpilot_pages(f"stars={stars}", date_debut=date_debut)
+            lignes.extend(batch)
+            LOG.info("Trustpilot: %s étoile(s): %s avis", stars, len(batch))
 
     out = _deduquer_et_trier(pd.DataFrame(lignes))
     LOG.info("Trustpilot: %s avis retenus (filtre par étoiles)", len(out))

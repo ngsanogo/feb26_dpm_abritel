@@ -1,0 +1,39 @@
+{
+  "name": "Abritel Dev",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12-bookworm",
+
+  "features": {
+    "ghcr.io/devcontainers-extra/features/uv:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "postCreateCommand": "uv sync --extra dev && uv run pre-commit install",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": ".venv/bin/python",
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+          }
+        },
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests"]
+      },
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-toolsai.jupyter"
+      ]
+    }
+  },
+
+  "forwardPorts": [11434],
+  "portsAttributes": {
+    "11434": { "label": "Ollama", "onAutoForward": "silent" }
+  }
+}

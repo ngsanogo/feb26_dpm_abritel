@@ -496,3 +496,79 @@ def sous_cat_autre(note: int, longueur_texte: int, texte: str = "") -> str:
     if note <= _AUTRE_NEGATIF_LONG_NOTE_MAX and longueur_texte >= _AUTRE_NEGATIF_LONG_MOTS_MIN:
         return "négatif non catégorisé"
     return "neutre"
+
+
+# --- Type d'avis (positif / négatif / neutre) ---
+
+
+def type_avis(note: int) -> str:
+    """Classe un avis en positif, négatif ou neutre selon la note.
+
+    - note >= 4 → positif
+    - note <= 2 → négatif
+    - note == 3 → neutre
+    """
+    if note >= 4:
+        return "positif"
+    if note <= 2:
+        return "négatif"
+    return "neutre"
+
+
+# --- Profil auteur (locataire / propriétaire) ---
+
+# Expressions qui indiquent que l'auteur est un propriétaire/hôte.
+# Toutes sans accents (comparées au texte normalisé).
+_PROFIL_PROPRIETAIRE_PATTERNS: tuple[str, ...] = (
+    # Auto-identification explicite
+    "je suis proprietaire",
+    "je suis hote",
+    "je suis l'hote",
+    "en tant qu'hote",
+    "en tant que proprietaire",
+    "en tant qu hote",
+    "en tant que hote",
+    "comme proprietaire",
+    "comme hote",
+    # Possessifs liés à l'activité de location (annonces, biens)
+    "mon annonce",
+    "mes annonces",
+    "mon bien",
+    "mes biens",
+    "ma maison en location",
+    "mon logement en location",
+    "mes logements",
+    "mes voyageurs",
+    "mes locataires",
+    # Espaces propriétaire / hôte dans l'app
+    "espace proprietaire",
+    "mode proprietaire",
+    "site proprietaire",
+    "espace hote",
+    "compte hote",
+    "compte proprietaire",
+    "interface proprietaire",
+    # Actions spécifiques aux propriétaires
+    "publier mon annonce",
+    "publier une annonce",
+    "poster une annonce",
+    "poster mon annonce",
+    "retirer ma location",
+    "gerer mes reservations",
+    "calendrier des reservations",
+)
+
+
+def profil_auteur(texte: str) -> str:
+    """Détecte si l'auteur d'un avis est locataire ou propriétaire.
+
+    Cherche des marqueurs explicites d'auto-identification comme propriétaire/hôte.
+    Par défaut, un avis est considéré comme venant d'un locataire (usage principal
+    de l'app = rechercher et réserver un logement).
+    """
+    if not isinstance(texte, str) or not texte.strip():
+        return "Locataire"
+    t = normaliser_texte(texte)
+    if any(pattern in t for pattern in _PROFIL_PROPRIETAIRE_PATTERNS):
+        return "Propriétaire"
+    return "Locataire"

@@ -23,7 +23,9 @@ from abritel.categorisation import (
     categoriser_avis_multi,
     evaluer_gravite,
     evaluer_gravite_texte,
+    profil_auteur,
     sous_cat_autre,
+    type_avis,
 )
 from abritel.ollama_categorisation import appliquer_categorisation_ollama, ollama_actif
 from abritel.scraping import (
@@ -64,8 +66,10 @@ __all__ = [
     "exporter_csv",
     "ollama_actif",
     "parse_datetime_utc",
+    "profil_auteur",
     "run_pipeline",
     "sous_cat_autre",
+    "type_avis",
     "telecharger_avis_app_store",
     "telecharger_avis_google_play",
     "telecharger_avis_trustpilot",
@@ -116,6 +120,10 @@ def enrichir(df: pd.DataFrame) -> pd.DataFrame:
             df["note"], df["longueur_texte"], df["texte"], df["Catégorie"], strict=True
         )
     ]
+    # Type d'avis : positif / négatif / neutre (basé sur la note)
+    df["type_avis"] = [type_avis(int(n) if pd.notna(n) else 0) for n in df["note"]]
+    # Profil auteur : Locataire / Propriétaire (détection par mots-clés)
+    df["profil_auteur"] = df["texte"].map(profil_auteur)
     return df
 
 
@@ -167,6 +175,8 @@ _COLONNES_ATTENDUES = [
     "Gravité",
     "Gravité_texte",
     "Autre_type",
+    "type_avis",
+    "profil_auteur",
 ]
 _CATEGORIES_VALIDES = frozenset(CATEGORIES_ABRITEL)
 _GRAVITES_VALIDES = {"Haute", "Moyenne", "Basse"}
@@ -603,6 +613,8 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
         "Gravité",
         "Gravité_texte",
         "Autre_type",
+        "type_avis",
+        "profil_auteur",
         "version_release",
     ]
     cols = [c for c in _colonnes_ordre if c in out.columns]

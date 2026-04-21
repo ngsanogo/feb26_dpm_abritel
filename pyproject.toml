@@ -3,7 +3,7 @@ name = "feb26_dpm_abritel"
 version = "0.1.0"
 description = "Scraping avis Google Play Abritel, analyse Jupyter, export CSV pour Power BI"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "pandas>=2.2",
     "numpy>=2.0",
@@ -16,40 +16,38 @@ dependencies = [
     "scipy>=1.12",
     "scikit-posthocs>=0.9",
     "simplemma>=1.0",
+    "playwright>=1.58.0",
+    "wordcloud>=1.9",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-xdist>=3.5",
     "responses>=0.25",
     "ruff>=0.6",
+    "pre-commit>=4.0",
+    "nbclient>=0.10.4",
+    "nbconvert>=7.17.1",
 ]
 
 [tool.uv]
-# Pas de package Python installable : scripts à la racine (1_pipeline.py, notebook).
+# Installé en mode editable pour que `from abritel.x import y` fonctionne.
 package = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 ignore = ["E501"]
 
-[tool.ruff.lint.per-file-ignores]
-"2_analyse_complete.py" = ["E402", "UP009"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-m \"not slow\""
 markers = [
     "slow: tests requiring real network access (deselect with '-m \"not slow\"')",
-]
-
-[dependency-groups]
-dev = [
-    "nbclient>=0.10.4",
-    "nbconvert>=7.17.1",
 ]

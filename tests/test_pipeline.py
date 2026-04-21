@@ -281,6 +281,8 @@ def test_valider_dataframe_valid() -> None:
             "Gravité": ["Basse"],
             "Gravité_texte": ["Basse"],
             "Autre_type": ["neutre"],
+            "type_avis": ["neutre"],
+            "profil_auteur": ["Locataire"],
         }
     )
     assert valider_dataframe(df) == []
@@ -343,6 +345,8 @@ def test_valider_dataframe_empty() -> None:
             "Gravité",
             "Gravité_texte",
             "Autre_type",
+            "type_avis",
+            "profil_auteur",
         ]
     )
     assert valider_dataframe(df) == []
