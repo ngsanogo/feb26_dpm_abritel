@@ -25,11 +25,17 @@ __pycache__/
 # Linting cache
 .ruff_cache/
 
-# Généré à côté du CSV (non commité par le workflow scrape)
+# Généré par le pipeline / notebook (régénérable)
 data/pipeline_meta.json
+data/crosstab_*.csv
+data/synthese_*.csv
+data/priorisation_*.csv
 
 # Export HTML du notebook (généré, ~3 MB)
 2_analyse_complete.html
+
+# Binaires bureautiques
+*.pbix
 
 # OS/editor
 .DS_Store

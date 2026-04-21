@@ -1,9 +1,0 @@
-Catégorie,volume,note_moyenne,pct_haute,score,mediane_volume,mediane_pct_haute
-Financier,128,1.35,90.62,116.0,75.0,81.97
-Annulation / Réservation,82,1.11,98.78,81.0,75.0,81.97
-Bug Technique,74,1.38,90.54,67.0,75.0,81.97
-Service Client,73,1.21,90.41,66.0,75.0,81.97
-Localisation / Langue,68,1.63,73.53,50.0,75.0,81.97
-UX / Ergonomie,76,2.41,51.32,39.0,75.0,81.97
-Qualité du bien,52,2.12,65.38,34.0,75.0,81.97
-Autre,167,4.54,7.19,12.0,75.0,81.97
