@@ -18,6 +18,16 @@ def normaliser_texte(texte: str) -> str:
 
 # --- Catégorisation ---
 
+# Négation : mots-clés à haut risque de faux positifs quand ils sont niés.
+# "Ce n'est pas une arnaque" → ne doit pas matcher Financier.
+# "L'app n'est pas compliquée" → ne doit pas matcher UX.
+# On retire ces expressions niées du texte AVANT le comptage de mots-clés.
+_NEGATION_CAT_RE = re.compile(
+    r"(?:pas|plus|jamais|aucun|aucune|ni|not|no)\s+(?:du\s+tout\s+|d'|une?\s+|de\s+|a\s+)?"
+    r"(?:arnaque|escroc|escroquerie|fraude|scam|voleur|bug|beug"
+    r"|complique|complexe|confus|confusing|difficile|difficult|complicated)"
+)
+
 # Les mots-clés sont SANS accents (le texte est normalisé avant comparaison).
 _CATEGORIES_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     (
@@ -297,6 +307,9 @@ def categoriser_avis_multi(texte: str) -> list[str]:
     if not isinstance(texte, str) or not texte.strip():
         return []
     t = normaliser_texte(texte)
+    # Retirer les expressions niées pour éviter les faux positifs
+    # ("pas une arnaque" ne doit pas compter "arnaque" pour Financier)
+    t = _NEGATION_CAT_RE.sub("", t)
     scored = [(cat, sum(1 for mot in mots if mot in t)) for cat, mots in _CATEGORIES_KEYWORDS]
     # Tri stable par score décroissant : les égalités conservent l'ordre de la liste
     scored.sort(key=lambda x: x[1], reverse=True)
