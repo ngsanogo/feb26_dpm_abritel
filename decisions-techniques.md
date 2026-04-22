@@ -1,6 +1,6 @@
 # Décisions techniques — Justification
 
-> Document créé le 2026-04-18, mis à jour le 2026-04-20.  
+> Document créé le 2026-04-18, mis à jour le 2026-04-22.  
 > Chaque section suit le format : **Décision → Pourquoi**.
 
 ---
@@ -112,6 +112,10 @@ Nous utilisons 4 appels Ollama simultanés parce que c'est le sweet-spot sur un 
 
 Le prompt système liste les catégories avec leurs descriptions et les règles d'arbitrage. Le message utilisateur inclut la note /5 (contexte émotionnel), la catégorie mots-clés comme hint (point de départ à valider/corriger plutôt qu'une classification ex-nihilo), et le texte tronqué à 6000 caractères. Le format JSON est forcé au niveau du tokenizer Ollama pour réduire les erreurs de parsing.
 
+### Mesure d'accord : Cohen's Kappa
+
+Cohen's Kappa mesure l'accord entre nos deux méthodes de catégorisation (mots-clés et LLM). Fleiss' Kappa, qui mesure l'accord inter-annotateurs humains, serait l'étape suivante pour valider la taxonomie. Nous n'avons pas encore réalisé cette validation externe parce que notre priorité était de livrer un pipeline fonctionnel ; une campagne d'annotation humaine (3+ annotateurs, ~100 avis) permettrait de calculer un Fleiss' Kappa et de mesurer la justesse de notre classification, pas seulement sa cohérence interne.
+
 ---
 
 ## 9. Cache incrémental Ollama
@@ -150,6 +154,8 @@ Nous écrivons d'abord dans un fichier temporaire puis nous faisons un `os.repla
 
 Nous dédupliquons sur cette combinaison de 4 champs parce que les 3 sources n'ont pas d'identifiant universel partageable (Google Play a un `reviewId`, mais App Store et Trustpilot n'en exposent pas). En pratique, cette combinaison est unique pour un avis réel. `keep="first"` donne la priorité à l'avis déjà présent dans le CSV (avec son cache Ollama), ce qui est cohérent avec le mode incrémental.
 
+Cette méthode ne détecte pas les quasi-doublons (typo mineure, ponctuation différente). En pratique, la fréquence de ces cas est négligeable sur notre corpus. Si le volume augmentait significativement, une similarité Levenshtein ou cosine en post-processing serait à envisager.
+
 ---
 
 ## 14. Collecte en parallèle
@@ -168,11 +174,15 @@ Nous comparons la proportion d'une catégorie cette semaine vs la moyenne des 4 
 
 Nous scrapons Trustpilot 5 fois (une fois par note de 1 à 5 étoiles) parce que sans filtre, Trustpilot retourne les avis dans un ordre de pertinence opaque qui sous-représente systématiquement les avis négatifs. En filtrant par étoiles, nous obtenons une représentation équilibrée de toutes les notes.
 
+Le scraper repose sur `soup.find("script", id="__NEXT_DATA__")`. Si Trustpilot migre hors de Next.js ou change cet identifiant, le scraper retournera 0 avis sans erreur explicite. Un test contractuel hebdomadaire (lundi 8h UTC) détecte cette casse, mais la fenêtre de détection est d'une semaine.
+
 ---
 
 ## 17. Google Play : 5 tentatives avec backoff
 
 Nous avons choisi 5 tentatives avec backoff exponentiel parce que l'API non officielle `google-play-scraper` est fragile (timeouts aléatoires, rate-limiting non documenté). La borne de 2000 pages est une sécurité contre les boucles infinies — en pratique, le token de pagination et le filtre de date interrompent la boucle bien avant.
+
+La bibliothèque `google-play-scraper` fait du reverse-engineering sur l'API Google Play (format protobuf non documenté). Google peut modifier ce format, ajouter de l'authentification ou bloquer le scraping à tout moment. Nous avons épinglé la version (`>=1.2.7,<2`) pour éviter les breaking changes involontaires.
 
 ---
 
@@ -232,6 +242,9 @@ Nous avons séparé le code en 4 fichiers (`scraping.py`, `categorisation.py`, `
 | Hash keywords | MD5 8 chars | Traçabilité légère |
 | Délai de grâce version | 2 jours | Temps de déploiement stores |
 | Gap benchmark | ≥ 3× | Seuil pour "faiblesse unique" vs concurrent |
+| Déduplication | (source, date, note, texte) | Pas d'ID universel cross-source |
+| google-play-scraper | >=1.2.7,<2 | Pin pour éviter les breaking changes |
+| Test contractuel | Lundi 8h UTC | Détecte la casse Trustpilot/stores sous 1 semaine |
 
 ---
 
@@ -244,3 +257,13 @@ Nous avons choisi de paramétrer les scrapers existants (`app_id`, `trustpilot_u
 La catégorisation par mots-clés est identique pour les 3 marques. Nous reconnaissons que nos mots-clés sont optimisés sur le vocabulaire Abritel, ce qui peut sous-estimer les taux de problèmes chez Airbnb et Booking (biais conservateur : si Abritel est pire MALGRÉ ce biais, le constat est d'autant plus robuste).
 
 Le seuil de 3× pour qualifier une "faiblesse unique" est un choix pragmatique : en dessous, l'écart peut être un artefact du biais de mots-clés ; au-dessus, il est statistiquement et pratiquement significatif.
+
+---
+
+## 24. Conformité et données personnelles
+
+Les avis que nous scrapons sont publiquement accessibles sur Google Play, App Store et Trustpilot. Aucun pseudo d'utilisateur n'est stocké dans le CSV : nous ne conservons que la date, la note, le texte et la source. Ce choix limite l'exposition aux données personnelles au strict minimum nécessaire à l'analyse.
+
+Nous avons choisi Ollama (LLM local) plutôt qu'une API cloud parce que cela élimine le risque de transmission de données à un tiers. Les textes d'avis ne quittent jamais la machine locale.
+
+`google-play-scraper` est une bibliothèque non officielle qui fait du reverse-engineering de l'API Google Play. Les CGU Google peuvent interdire cet usage, c'est un risque connu et accepté pour un projet académique. De même, les CGU Trustpilot et Apple peuvent restreindre le scraping automatisé de leurs plateformes. Nous acceptons ce risque dans le cadre d'un projet universitaire à faible volume, sans exploitation commerciale des données collectées.

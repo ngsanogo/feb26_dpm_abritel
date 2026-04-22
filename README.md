@@ -10,6 +10,8 @@ Collecte d'avis depuis **3 sources** (Google Play, App Store, Trustpilot) pour A
 | **App Store iOS** | API RSS JSON officielle Apple — 10 pages de 50 avis | ~90 avis |
 | **Trustpilot** | Extraction JSON `__NEXT_DATA__` — pagination par etoiles (5 x 10 pages) | ~200 avis |
 
+> **Note methodologique** : Les pourcentages presentes dans ce projet refletent la distribution dans le corpus analyse (~750 avis Abritel dont ~28% Trustpilot), **pas la prevalence reelle dans la base utilisateurs**. Trustpilot presente un biais d'auto-selection (sur-representation des plaignants). Les analyses stratifiees par source sont disponibles dans le notebook.
+
 ## Mindset : rien sur le Mac, tout dans le projet
 
 - **Une seule chose** installee au niveau machine (si besoin) : [**uv**](https://docs.astral.sh/uv/) — gestionnaire de Python + dependances + venv.

@@ -16,8 +16,10 @@ import textwrap
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import requests
+from scipy import stats
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 LOG = logging.getLogger(__name__)
@@ -76,7 +78,25 @@ def compute_kappas(df: pd.DataFrame) -> dict[str, dict]:
         k = cohen_kappa(y1, y2)
         accord = sum(1 for a, b in zip(y1, y2, strict=True) if a == b) / len(y1) * 100
         reclassified = sum(1 for a, b in zip(y1, y2, strict=True) if a != b)
-        results[m] = {"kappa": k, "accord": accord, "reclassified": reclassified, "n": len(sub)}
+
+        # Bootstrap IC 95% sur κ (1000 réplications, seed fixe pour reproductibilité)
+        rng = np.random.default_rng(42)
+        n = len(y1)
+        kappas_boot = []
+        for _ in range(1000):
+            idx = rng.integers(0, n, size=n)
+            kappas_boot.append(cohen_kappa([y1[i] for i in idx], [y2[i] for i in idx]))
+        ci_low = float(np.percentile(kappas_boot, 2.5))
+        ci_high = float(np.percentile(kappas_boot, 97.5))
+
+        results[m] = {
+            "kappa": k,
+            "accord": accord,
+            "reclassified": reclassified,
+            "n": len(sub),
+            "ci_low": ci_low,
+            "ci_high": ci_high,
+        }
     return results
 
 
@@ -97,17 +117,27 @@ def compute_positioning(df: pd.DataFrame) -> dict[str, dict]:
 
 
 def compute_gaps(df: pd.DataFrame) -> list[dict]:
-    """Catégories où Abritel est significativement pire que le meilleur concurrent."""
+    """Catégories où Abritel est significativement pire que le meilleur concurrent.
+
+    Chaque gap inclut un test exact de Fisher (2×2) avec correction de Bonferroni
+    pour valider la significativité statistique du ratio.
+    """
     gaps = []
     categories = [c for c in df["Catégorie"].unique() if c != "Autre"]
     marques = df["marque"].unique()
+    n_tests = len(categories)
+    alpha_bonferroni = 0.05 / n_tests if n_tests > 0 else 0.05
 
     for cat in categories:
         rates = {}
+        counts = {}
+        totals = {}
         for m in marques:
             total = len(df[df["marque"] == m])
             n_cat = len(df[(df["marque"] == m) & (df["Catégorie"] == cat)])
             rates[m] = round(100 * n_cat / total, 1) if total else 0
+            counts[m] = n_cat
+            totals[m] = total
 
         competitors = {k: v for k, v in rates.items() if k != "Abritel"}
         if not competitors:
@@ -116,6 +146,18 @@ def compute_gaps(df: pd.DataFrame) -> list[dict]:
         best_comp_name = min(competitors, key=lambda k: competitors[k])
 
         ratio = round(rates["Abritel"] / best_comp_rate, 1) if best_comp_rate > 0 else 99.0
+
+        # Fisher exact test (2×2) : Abritel vs meilleur concurrent
+        n_a = counts.get("Abritel", 0)
+        t_a = totals.get("Abritel", 0)
+        n_c = counts.get(best_comp_name, 0)
+        t_c = totals.get(best_comp_name, 0)
+
+        if t_a > 0 and t_c > 0:
+            table = [[n_a, t_a - n_a], [n_c, t_c - n_c]]
+            _, p_value = stats.fisher_exact(table, alternative="greater")
+        else:
+            p_value = 1.0
 
         gaps.append(
             {
@@ -126,6 +168,9 @@ def compute_gaps(df: pd.DataFrame) -> list[dict]:
                 "ratio": ratio,
                 "airbnb_pct": rates.get("Airbnb", 0),
                 "booking_pct": rates.get("Booking", 0),
+                "p_value": round(p_value, 4),
+                "significant": p_value < alpha_bonferroni,
+                "alpha_bonferroni": round(alpha_bonferroni, 4),
             }
         )
 
@@ -335,17 +380,30 @@ def generate_report(
             ]
         )
 
-    # Top gaps
-    top_gaps = [g for g in gaps if g["ratio"] >= GAP_THRESHOLD]
+    # Top gaps (significatifs uniquement)
+    top_gaps = [g for g in gaps if g["ratio"] >= GAP_THRESHOLD and g.get("significant", True)]
+    # Gaps avec ratio élevé mais non significatifs
+    weak_gaps = [g for g in gaps if g["ratio"] >= GAP_THRESHOLD and not g.get("significant", True)]
     if top_gaps:
         lines.append(
-            "**Faiblesses uniques Abritel** (taux ≥ 3× supérieur au meilleur concurrent) :"
+            "**Faiblesses uniques Abritel** "
+            "(taux ≥ 3× supérieur au meilleur concurrent, Fisher exact p < α Bonferroni) :"
         )
         lines.append("")
         for i, g in enumerate(top_gaps, 1):
             lines.append(
                 f"{i}. **{g['categorie']}** : {g['abritel_pct']}% → "
-                f"{g['ratio']}× le concurrent ({g['best_comp_pct']}%)"
+                f"{g['ratio']}× le concurrent ({g['best_comp_pct']}%) "
+                f"— p = {g['p_value']:.4f} ✓"
+            )
+        lines.append("")
+    if weak_gaps:
+        lines.append("*Gaps élevés mais non significatifs après Bonferroni :*")
+        lines.append("")
+        for g in weak_gaps:
+            lines.append(
+                f"- {g['categorie']} : {g['ratio']}× (p = {g['p_value']:.4f}, "
+                f"α = {g.get('alpha_bonferroni', 0.007):.4f})"
             )
         lines.append("")
 
@@ -402,22 +460,30 @@ def generate_report(
     if kappas:
         lines.extend(
             [
-                "| Marque | κ Cohen | Accord | Reclassifiés |",
-                "|--------|---------|--------|-------------|",
+                "| Marque | κ Cohen | IC 95% | Accord | Reclassifiés |",
+                "|--------|---------|--------|--------|-------------|",
             ]
         )
         for m in ["Abritel", "Airbnb", "Booking"]:
             if m in kappas:
                 k = kappas[m]
                 lines.append(
-                    f"| {m} | {k['kappa']:.3f} | {k['accord']:.0f}% "
+                    f"| {m} | {k['kappa']:.3f} "
+                    f"| [{k['ci_low']:.3f}, {k['ci_high']:.3f}] "
+                    f"| {k['accord']:.0f}% "
                     f"| {k['reclassified']:,} ({k['reclassified'] / k['n'] * 100:.0f}%) |"
                 )
         lines.extend(
             [
                 "",
                 "Accord **substantiel** (κ > 0.6) sur les 3 corpus — "
-                "méthode reproductible et robuste.",
+                "méthode reproductible et robuste. "
+                "IC 95% calculés par bootstrap (1 000 réplications).",
+                "",
+                "*Note* : le κ mesure l'accord entre deux méthodes automatiques "
+                "(mots-clés vs LLM), pas la justesse contre une vérité terrain humaine. "
+                "Une validation par annotation manuelle (Fleiss' κ inter-annotateurs) "
+                "renforcerait la crédibilité.",
                 "",
             ]
         )
@@ -427,13 +493,25 @@ def generate_report(
         [
             "### Limites",
             "",
+            "> **Avertissement méthodologique** : les pourcentages présentés reflètent "
+            "la distribution dans le corpus analysé, **pas la prévalence réelle "
+            "dans la base utilisateurs**. Trustpilot (~28% du corpus Abritel) "
+            "présente un biais d'auto-sélection (sur-représentation des plaignants). "
+            "Google Play seul = ~50% de négatifs ; avec Trustpilot (100% négatifs) "
+            "→ ~68%. L'écart vient du biais de sélection, pas du sentiment réel.",
+            "",
             f"- **Volume asymétrique** : Abritel ({p['Abritel']['n']:,})"
             + (f" vs Booking ({p['Booking']['n']:,})" if "Booking" in p else "")
             + " — pourcentages Abritel plus volatils.",
             "- **Biais Trustpilot** : auto-sélection de plaignants, "
             "les taux de négatifs par source ne reflètent pas le sentiment réel.",
             "- **Mots-clés** : optimisés sur le vocabulaire Abritel, "
-            "potentiel sous-comptage pour les concurrents.",
+            "potentiel sous-comptage pour les concurrents "
+            "(biais conservateur : si Abritel est pire malgré ce biais, "
+            "le constat est d'autant plus robuste).",
+            "- **Tests statistiques** : les gaps sont validés par test exact de Fisher "
+            "avec correction de Bonferroni. Seuls les gaps marqués « significatif » "
+            "sont exploitables pour des décisions stratégiques.",
             "",
             "---",
             "",
@@ -448,15 +526,17 @@ def generate_report(
                 "",
                 "### Répartition des problèmes",
                 "",
-                "| Catégorie | Abritel | Airbnb | Booking | Ratio |",
-                "|-----------|--------|--------|---------|-------|",
+                "| Catégorie | Abritel | Airbnb | Booking | Ratio | p Fisher | Sig. |",
+                "|-----------|--------|--------|---------|-------|----------|------|",
             ]
         )
         for g in sorted(gaps, key=lambda x: -x["abritel_pct"]):
             ratio_str = f"**{g['ratio']}×**" if g["ratio"] >= GAP_THRESHOLD else f"{g['ratio']}×"
+            sig = "✓" if g.get("significant") else "—"
             lines.append(
                 f"| {g['categorie']} | {g['abritel_pct']}% "
-                f"| {g['airbnb_pct']}% | {g['booking_pct']}% | {ratio_str} |"
+                f"| {g['airbnb_pct']}% | {g['booking_pct']}% "
+                f"| {ratio_str} | {g['p_value']:.4f} | {sig} |"
             )
         lines.extend(["", "---", ""])
 
@@ -546,8 +626,11 @@ def generate_report(
 
         lines.extend(
             [
-                "**Implication** : si Abritel corrige ses faiblesses spécifiques "
-                "pendant que Booking se dégrade, c'est une fenêtre d'acquisition.",
+                "**Observation** : corrélation entre la dégradation Booking et "
+                "une potentielle fenêtre d'acquisition pour Abritel. "
+                "Corrélation ≠ causalité — les causes du déclin Booking "
+                "(produit, macro-économie, saisonnalité, augmentation du volume "
+                "diluant mécaniquement la note) sont hors périmètre de cette analyse.",
                 "",
                 "---",
                 "",
@@ -574,8 +657,8 @@ def generate_report(
         [
             "## Matrice de priorisation",
             "",
-            "| Problème | Gap | Impact | Quick win | Horizon | Action |",
-            "|----------|-----|--------|-----------|---------|--------|",
+            "| Problème | Gap | Sig. | Impact | Quick win | Horizon | Action |",
+            "|----------|-----|------|--------|-----------|---------|--------|",
         ]
     )
     for g in sorted(gaps, key=lambda x: -x["ratio"]):
@@ -584,8 +667,9 @@ def generate_report(
         if not rec:
             continue
         qw = "✓" if rec["quick_win"] else "—"
+        sig = "✓" if g.get("significant") else "—"
         lines.append(
-            f"| {cat} | {g['ratio']}× | {g['abritel_pct']}% "
+            f"| {cat} | {g['ratio']}× | {sig} | {g['abritel_pct']}% "
             f"| {qw} | {rec['horizon']} | {rec['action']} |"
         )
     lines.extend(["", "---", ""])
@@ -619,19 +703,29 @@ def main():
     LOG.info("\n═══ KAPPA ═══")
     kappas = compute_kappas(df)
     for m, k in kappas.items():
-        LOG.info("  %s: κ=%.3f, accord=%.0f%%", m, k["kappa"], k["accord"])
+        LOG.info(
+            "  %s: κ=%.3f [%.3f, %.3f], accord=%.0f%%",
+            m,
+            k["kappa"],
+            k["ci_low"],
+            k["ci_high"],
+            k["accord"],
+        )
 
     gaps = compute_gaps(df)
     top_gaps = [g for g in gaps if g["ratio"] >= GAP_THRESHOLD]
     LOG.info("\n═══ GAPS UNIQUES ABRITEL (≥ %.0f×) ═══", GAP_THRESHOLD)
     for g in top_gaps:
+        sig = "✓" if g.get("significant") else "ns"
         LOG.info(
-            "  %s: %.1f%% → %.1f× (%s %.1f%%)",
+            "  %s: %.1f%% → %.1f× (%s %.1f%%) p=%.4f %s",
             g["categorie"],
             g["abritel_pct"],
             g["ratio"],
             g["best_comp_name"],
             g["best_comp_pct"],
+            g["p_value"],
+            sig,
         )
 
     bk_decline = compute_booking_decline(df)

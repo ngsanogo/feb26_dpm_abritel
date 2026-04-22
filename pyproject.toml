@@ -5,25 +5,24 @@ description = "Scraping avis Google Play Abritel, analyse Jupyter, export CSV po
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pandas>=2.2",
-    "numpy>=2.0",
-    "matplotlib>=3.9",
-    "seaborn>=0.13",
-    "ipykernel>=6.29",
-    "google-play-scraper>=1.2.7",
-    "requests>=2.31",
-    "beautifulsoup4>=4.12",
-    "scipy>=1.12",
-    "scikit-posthocs>=0.9",
-    "simplemma>=1.0",
-    "playwright>=1.58.0",
-    "wordcloud>=1.9",
+    "pandas>=2.2,<3",
+    "numpy>=2.0,<3",
+    "matplotlib>=3.9,<4",
+    "seaborn>=0.13,<1",
+    "ipykernel>=6.29,<7",
+    "google-play-scraper>=1.2.7,<2",
+    "requests>=2.31,<3",
+    "beautifulsoup4>=4.12,<5",
+    "scipy>=1.12,<2",
+    "scikit-posthocs>=0.9,<1",
+    "simplemma>=1.0,<2",
+    "playwright>=1.58.0,<2",
+    "wordcloud>=1.9,<2",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "pytest-xdist>=3.5",
     "responses>=0.25",
     "ruff>=0.6",
     "pre-commit>=4.0",

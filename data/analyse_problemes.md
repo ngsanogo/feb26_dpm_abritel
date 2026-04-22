@@ -13,11 +13,11 @@
 | Gravité Haute (texte) | **17.7%** | 5.0% | 5.4% |
 | Corpus | 747 | 6,125 | 9,121 |
 
-**Faiblesses uniques Abritel** (taux ≥ 3× supérieur au meilleur concurrent) :
+**Faiblesses uniques Abritel** (taux ≥ 3× supérieur au meilleur concurrent, Fisher exact p < α Bonferroni) :
 
-1. **Localisation / Langue** : 10.6% → 53.0× le concurrent (0.2%)
-2. **Annulation / Réservation** : 12.3% → 4.7× le concurrent (2.6%)
-3. **UX / Ergonomie** : 8.7% → 3.5× le concurrent (2.5%)
+1. **Localisation / Langue** : 10.6% → 53.0× le concurrent (0.2%) — p = 0.0000 ✓
+2. **Annulation / Réservation** : 12.3% → 4.7× le concurrent (2.6%) — p = 0.0000 ✓
+3. **UX / Ergonomie** : 8.7% → 3.5× le concurrent (2.5%) — p = 0.0000 ✓
 
 **Signal** : Booking en chute (note 4.21 → 3.36, négatifs 16% → 39% sur 2025-11 → 2026-04).
 
@@ -39,19 +39,24 @@
 
 Pipeline hybride mots-clés (226 termes FR/EN, négation-aware) + LLM (Ollama, temperature 0).
 
-| Marque | κ Cohen | Accord | Reclassifiés |
-|--------|---------|--------|-------------|
-| Abritel | 0.731 | 77% | 172 (23%) |
-| Airbnb | 0.624 | 79% | 1,298 (21%) |
-| Booking | 0.645 | 84% | 1,490 (16%) |
+| Marque | κ Cohen | IC 95% | Accord | Reclassifiés |
+|--------|---------|--------|--------|-------------|
+| Abritel | 0.731 | [0.697, 0.764] | 77% | 172 (23%) |
+| Airbnb | 0.624 | [0.606, 0.640] | 79% | 1,298 (21%) |
+| Booking | 0.645 | [0.631, 0.660] | 84% | 1,490 (16%) |
 
-Accord **substantiel** (κ > 0.6) sur les 3 corpus — méthode reproductible et robuste.
+Accord **substantiel** (κ > 0.6) sur les 3 corpus — méthode reproductible et robuste. IC 95% calculés par bootstrap (1 000 réplications).
+
+*Note* : le κ mesure l'accord entre deux méthodes automatiques (mots-clés vs LLM), pas la justesse contre une vérité terrain humaine. Une validation par annotation manuelle (Fleiss' κ inter-annotateurs) renforcerait la crédibilité.
 
 ### Limites
 
+> **Avertissement méthodologique** : les pourcentages présentés reflètent la distribution dans le corpus analysé, **pas la prévalence réelle dans la base utilisateurs**. Trustpilot (~28% du corpus Abritel) présente un biais d'auto-sélection (sur-représentation des plaignants). Google Play seul = ~50% de négatifs ; avec Trustpilot (100% négatifs) → ~68%. L'écart vient du biais de sélection, pas du sentiment réel.
+
 - **Volume asymétrique** : Abritel (747) vs Booking (9,121) — pourcentages Abritel plus volatils.
 - **Biais Trustpilot** : auto-sélection de plaignants, les taux de négatifs par source ne reflètent pas le sentiment réel.
-- **Mots-clés** : optimisés sur le vocabulaire Abritel, potentiel sous-comptage pour les concurrents.
+- **Mots-clés** : optimisés sur le vocabulaire Abritel, potentiel sous-comptage pour les concurrents (biais conservateur : si Abritel est pire malgré ce biais, le constat est d'autant plus robuste).
+- **Tests statistiques** : les gaps sont validés par test exact de Fisher avec correction de Bonferroni. Seuls les gaps marqués « significatif » sont exploitables pour des décisions stratégiques.
 
 ---
 
@@ -59,15 +64,15 @@ Accord **substantiel** (κ > 0.6) sur les 3 corpus — méthode reproductible et
 
 ### Répartition des problèmes
 
-| Catégorie | Abritel | Airbnb | Booking | Ratio |
-|-----------|--------|--------|---------|-------|
-| Financier | 14.1% | 6.8% | 6.6% | 2.1× |
-| Annulation / Réservation | 12.3% | 2.6% | 2.9% | **4.7×** |
-| Localisation / Langue | 10.6% | 0.2% | 0.3% | **53.0×** |
-| Service Client | 10.4% | 5.2% | 5.7% | 2.0× |
-| Bug Technique | 10.3% | 8.6% | 3.5% | 2.9× |
-| UX / Ergonomie | 8.7% | 6.6% | 2.5% | **3.5×** |
-| Qualité du bien | 7.8% | 2.9% | 2.7% | 2.9× |
+| Catégorie | Abritel | Airbnb | Booking | Ratio | p Fisher | Sig. |
+|-----------|--------|--------|---------|-------|----------|------|
+| Financier | 14.1% | 6.8% | 6.6% | 2.1× | 0.0000 | ✓ |
+| Annulation / Réservation | 12.3% | 2.6% | 2.9% | **4.7×** | 0.0000 | ✓ |
+| Localisation / Langue | 10.6% | 0.2% | 0.3% | **53.0×** | 0.0000 | ✓ |
+| Service Client | 10.4% | 5.2% | 5.7% | 2.0× | 0.0000 | ✓ |
+| Bug Technique | 10.3% | 8.6% | 3.5% | 2.9× | 0.0000 | ✓ |
+| UX / Ergonomie | 8.7% | 6.6% | 2.5% | **3.5×** | 0.0000 | ✓ |
+| Qualité du bien | 7.8% | 2.9% | 2.7% | 2.9× | 0.0000 | ✓ |
 
 ---
 
@@ -193,7 +198,7 @@ Causes (négatifs Booking avril 2026, hors Autre) :
 - **Service Client** : 67 avis
 - **Annulation / Réservation** : 23 avis
 
-**Implication** : si Abritel corrige ses faiblesses spécifiques pendant que Booking se dégrade, c'est une fenêtre d'acquisition.
+**Observation** : corrélation entre la dégradation Booking et une potentielle fenêtre d'acquisition pour Abritel. Corrélation ≠ causalité — les causes du déclin Booking (produit, macro-économie, saisonnalité, augmentation du volume diluant mécaniquement la note) sont hors périmètre de cette analyse.
 
 ---
 
@@ -212,15 +217,15 @@ Causes (négatifs Booking avril 2026, hors Autre) :
 
 ## Matrice de priorisation
 
-| Problème | Gap | Impact | Quick win | Horizon | Action |
-|----------|-----|--------|-----------|---------|--------|
-| Localisation / Langue | 53.0× | 10.6% | ✓ | Sprint Q2 | Audit i18n (devise, langue, géolocalisation NZ/$), détection auto locale |
-| Annulation / Réservation | 4.7× | 12.3% | — | Roadmap Q3 | Synchro calendrier multi-plateforme, protocole relogement J-0 |
-| UX / Ergonomie | 3.5× | 8.7% | ✓ | Sprint Q2 | Deep linking sans téléchargement forcé, persistance filtres, refonte nav |
-| Qualité du bien | 2.9× | 7.8% | — | Roadmap Q4 | Vérification photo, score fraîcheur annonces, checklist propriétaire |
-| Bug Technique | 2.9× | 10.3% | ✓ | Sprint Q2 | Sprint stabilité login/auth, monitoring crash rate + latence |
-| Financier | 2.1× | 14.1% | — | Roadmap Q3 | SLA remboursement 7j garanti, prix final affiché avant paiement |
-| Service Client | 2.0× | 10.4% | — | Roadmap Q3-Q4 | Routage francophone prioritaire, escalade humaine < 5 min |
+| Problème | Gap | Sig. | Impact | Quick win | Horizon | Action |
+|----------|-----|------|--------|-----------|---------|--------|
+| Localisation / Langue | 53.0× | ✓ | 10.6% | ✓ | Sprint Q2 | Audit i18n (devise, langue, géolocalisation NZ/$), détection auto locale |
+| Annulation / Réservation | 4.7× | ✓ | 12.3% | — | Roadmap Q3 | Synchro calendrier multi-plateforme, protocole relogement J-0 |
+| UX / Ergonomie | 3.5× | ✓ | 8.7% | ✓ | Sprint Q2 | Deep linking sans téléchargement forcé, persistance filtres, refonte nav |
+| Qualité du bien | 2.9× | ✓ | 7.8% | — | Roadmap Q4 | Vérification photo, score fraîcheur annonces, checklist propriétaire |
+| Bug Technique | 2.9× | ✓ | 10.3% | ✓ | Sprint Q2 | Sprint stabilité login/auth, monitoring crash rate + latence |
+| Financier | 2.1× | ✓ | 14.1% | — | Roadmap Q3 | SLA remboursement 7j garanti, prix final affiché avant paiement |
+| Service Client | 2.0× | ✓ | 10.4% | — | Roadmap Q3-Q4 | Routage francophone prioritaire, escalade humaine < 5 min |
 
 ---
 

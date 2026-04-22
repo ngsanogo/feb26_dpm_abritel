@@ -213,6 +213,10 @@ def telecharger_avis_google_play(
             except (requests.RequestException, ValueError, TypeError) as e:
                 if tentative == 4:
                     LOG.warning("Google Play — erreur après 5 tentatives: %s", e)
+            except Exception as e:
+                LOG.warning("Google Play — erreur inattendue (tentative %d): %s", tentative + 1, e)
+                if tentative == 4:
+                    break
                 time.sleep(min(2**tentative + random.uniform(0, 0.5), 10))
         pages += 1
         if not lot:
@@ -259,6 +263,8 @@ def telecharger_avis_app_store(
     fin = date_fin_inclusive()
     lignes: list[dict] = []
     pages_ok = 0
+    dates_invalides = 0
+    total_entries = 0
 
     for page in range(1, 11):
         url = (
@@ -279,8 +285,10 @@ def telecharger_avis_app_store(
             if rating is None:
                 continue
 
+            total_entries += 1
             dt = parse_datetime_utc(entry.get("updated", {}).get("label", ""))
             if dt is None:
+                dates_invalides += 1
                 continue
 
             jour = avis_jour_paris(dt)
@@ -302,6 +310,16 @@ def telecharger_avis_app_store(
             )
 
         pages_ok += 1
+
+    if dates_invalides > 0:
+        pct = 100 * dates_invalides / total_entries if total_entries else 0
+        level = LOG.warning if pct > 5 else LOG.info
+        level(
+            "App Store: %d/%d avis rejetés (date invalide, %.0f%%)",
+            dates_invalides,
+            total_entries,
+            pct,
+        )
 
     out = _deduquer_et_trier(pd.DataFrame(lignes))
     LOG.info("App Store: %s page(s), %s avis retenus", pages_ok, len(out))
@@ -328,6 +346,8 @@ def _trustpilot_pages(
     """Pagine Trustpilot (max TRUSTPILOT_PAGES_PAR_FILTRE) pour un jeu de paramètres."""
     fin = date_fin_inclusive()
     lignes: list[dict] = []
+    dates_invalides = 0
+    total_avis = 0
 
     for page in range(1, TRUSTPILOT_PAGES_PAR_FILTRE + 1):
         sep = "&" if params else "?"
@@ -356,8 +376,10 @@ def _trustpilot_pages(
 
         page_hors_fenetre = True
         for avis in avis_list:
+            total_avis += 1
             dt = parse_datetime_utc(avis.get("dates", {}).get("publishedDate", ""))
             if dt is None:
+                dates_invalides += 1
                 continue
 
             jour = avis_jour_paris(dt)
@@ -381,6 +403,16 @@ def _trustpilot_pages(
 
         if page_hors_fenetre:
             break
+
+    if dates_invalides > 0:
+        pct = 100 * dates_invalides / total_avis if total_avis else 0
+        level = LOG.warning if pct > 5 else LOG.info
+        level(
+            "Trustpilot: %d/%d avis rejetés (date invalide, %.0f%%)",
+            dates_invalides,
+            total_avis,
+            pct,
+        )
 
     return lignes
 
