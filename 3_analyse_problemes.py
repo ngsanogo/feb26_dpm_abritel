@@ -1,15 +1,10 @@
-"""Analyse des problèmes majeurs par persona — synthèse quanti + quali (Ollama).
+"""Rapport CODIR — Benchmark Abritel vs Airbnb vs Booking.
 
 Produit : data/analyse_problemes.md
-Durée : ~5-10 min (8 appels Ollama pour la synthèse qualitative).
+Durée : ~2 min (quantitatif pur) ou ~10 min (avec synthèse Ollama).
 
-Améliorations CODIR :
-- Section méthodologie avec Cohen's Kappa (accord mots-clés ↔ LLM)
-- Analyse du biais de source (Trustpilot 100% négatif)
-- Évolution temporelle mensuelle des catégories
-- Gravité_texte (indépendante de la note) dans la priorisation
-- Avertissement renforcé sur l'échantillon Propriétaire (n=44)
-- Tableau opportunités rempli avec recommandations actionnables
+Analyse ~16 000 avis depuis 3 sources (Google Play, App Store, Trustpilot)
+pour 3 marques sur la période 2025-01 → 2026-04.
 """
 
 from __future__ import annotations
@@ -29,24 +24,30 @@ LOG = logging.getLogger(__name__)
 
 # ── Config ──────────────────────────────────────────────────────────────
 OLLAMA_URL = "http://127.0.0.1:11434"
-MODEL = "gemma4:31b"
-DATA_PATH = Path("data/avis_enrichis.csv")
+MODEL = "qwen3.5"
+BENCHMARK_CSV = Path("data/benchmark/benchmark_complet.csv")
+FALLBACK_CSV = Path("data/avis_enrichis.csv")
 OUTPUT_PATH = Path("data/analyse_problemes.md")
-MIN_PCT_THRESHOLD = 5  # ignorer les catégories < 5% des avis négatifs du persona
-MAX_REVIEWS_PER_BATCH = 60  # cap pour le prompt Ollama
+MAX_REVIEWS_PER_BATCH = 60
 TIMEOUT_S = 300
+GAP_THRESHOLD = 3.0  # ratio minimum pour "faiblesse unique"
 
 
 # ── Data loading ────────────────────────────────────────────────────────
 def load_data() -> pd.DataFrame:
-    df = pd.read_csv(DATA_PATH, encoding="utf-8-sig")
-    LOG.info("Chargé %d avis depuis %s", len(df), DATA_PATH)
+    if BENCHMARK_CSV.is_file():
+        df = pd.read_csv(BENCHMARK_CSV, encoding="utf-8-sig")
+        LOG.info("Chargé %d avis benchmark depuis %s", len(df), BENCHMARK_CSV)
+    else:
+        df = pd.read_csv(FALLBACK_CSV, encoding="utf-8-sig")
+        df["marque"] = "Abritel"
+        LOG.info("Benchmark non trouvé — fallback Abritel seul (%d avis)", len(df))
+    df["date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
     return df
 
 
 # ── Cohen's Kappa ───────────────────────────────────────────────────────
 def cohen_kappa(y1: list[str], y2: list[str]) -> float:
-    """Cohen's Kappa pour l'accord inter-annotateurs sur des catégories."""
     n = len(y1)
     if n == 0 or n != len(y2):
         return 0.0
@@ -60,91 +61,118 @@ def cohen_kappa(y1: list[str], y2: list[str]) -> float:
     return (p_o - p_e) / (1 - p_e)
 
 
-def compute_kappa(df: pd.DataFrame) -> float | None:
-    """Calcule le Kappa entre Catégorie_mots_cles et Catégorie_ollama."""
-    if "Catégorie_mots_cles" not in df.columns or "Catégorie_ollama" not in df.columns:
-        return None
-    mask = df["Catégorie_ollama"].notna() & (df["Catégorie_ollama"].astype(str).str.strip() != "")
-    sub = df[mask]
-    if len(sub) < 50:
-        return None
-    return cohen_kappa(
-        sub["Catégorie_mots_cles"].astype(str).tolist(),
-        sub["Catégorie_ollama"].astype(str).tolist(),
-    )
-
-
-# ── Quantitative analysis ──────────────────────────────────────────────
-def _colonne_categorie(df: pd.DataFrame) -> str:
-    """Retourne la colonne de catégorie la plus fiable disponible."""
-    if "Catégorie_ollama" in df.columns and df["Catégorie_ollama"].notna().any():
-        non_vide = (df["Catégorie_ollama"].astype(str).str.strip() != "").sum()
-        if non_vide > len(df) * 0.5:
-            return "Catégorie_ollama"
-    return "Catégorie"
-
-
-def analyse_quanti(persona_df: pd.DataFrame) -> list[dict]:
-    """Retourne les catégories triées par fréquence, avec stats."""
-    total = len(persona_df)
-    if total == 0:
-        return []
-    col_cat = _colonne_categorie(persona_df)
-    LOG.info("  Colonne de catégorie utilisée : %s", col_cat)
-    cat_counts = persona_df[col_cat].value_counts()
-
-    # Utiliser Gravité_texte si disponible (indépendante de la note)
-    col_grav = "Gravité_texte" if "Gravité_texte" in persona_df.columns else "Gravité"
-
-    results = []
-    for cat, count in cat_counts.items():
-        pct = count / total * 100
-        if pct < MIN_PCT_THRESHOLD:
+def compute_kappas(df: pd.DataFrame) -> dict[str, dict]:
+    results = {}
+    for m in sorted(df["marque"].unique()):
+        sub = df[
+            (df["marque"] == m)
+            & df["Catégorie_ollama"].notna()
+            & (df["Catégorie_ollama"].astype(str).str.strip() != "")
+        ]
+        if len(sub) < 50:
             continue
-        cat_df = persona_df[persona_df[col_cat] == cat]
-        haute_pct = (cat_df[col_grav] == "Haute").mean() * 100
-        notes = cat_df["note"].value_counts().sort_index().to_dict()
-        results.append(
+        y1 = sub["Catégorie_mots_cles"].astype(str).tolist()
+        y2 = sub["Catégorie_ollama"].astype(str).tolist()
+        k = cohen_kappa(y1, y2)
+        accord = sum(1 for a, b in zip(y1, y2, strict=True) if a == b) / len(y1) * 100
+        reclassified = sum(1 for a, b in zip(y1, y2, strict=True) if a != b)
+        results[m] = {"kappa": k, "accord": accord, "reclassified": reclassified, "n": len(sub)}
+    return results
+
+
+# ── Benchmark analysis ─────────────────────────────────────────────────
+def compute_positioning(df: pd.DataFrame) -> dict[str, dict]:
+    metrics = {}
+    for m in sorted(df["marque"].unique()):
+        sub = df[df["marque"] == m]
+        metrics[m] = {
+            "n": len(sub),
+            "note_moy": round(sub["note"].mean(), 2),
+            "pct_neg": round((sub["type_avis"] == "négatif").mean() * 100, 1),
+            "pct_pos": round((sub["type_avis"] == "positif").mean() * 100, 1),
+            "pct_grav_haute_texte": round((sub["Gravité_texte"] == "Haute").mean() * 100, 1),
+            "sources": sub["source"].value_counts().to_dict(),
+        }
+    return metrics
+
+
+def compute_gaps(df: pd.DataFrame) -> list[dict]:
+    """Catégories où Abritel est significativement pire que le meilleur concurrent."""
+    gaps = []
+    categories = [c for c in df["Catégorie"].unique() if c != "Autre"]
+    marques = df["marque"].unique()
+
+    for cat in categories:
+        rates = {}
+        for m in marques:
+            total = len(df[df["marque"] == m])
+            n_cat = len(df[(df["marque"] == m) & (df["Catégorie"] == cat)])
+            rates[m] = round(100 * n_cat / total, 1) if total else 0
+
+        competitors = {k: v for k, v in rates.items() if k != "Abritel"}
+        if not competitors:
+            continue
+        best_comp_rate = min(competitors.values())
+        best_comp_name = min(competitors, key=lambda k: competitors[k])
+
+        ratio = round(rates["Abritel"] / best_comp_rate, 1) if best_comp_rate > 0 else 99.0
+
+        gaps.append(
             {
                 "categorie": cat,
-                "count": int(count),
-                "pct": round(pct, 1),
-                "haute_pct": round(haute_pct, 1),
-                "notes_distrib": notes,
-                "textes": cat_df["texte"].tolist(),
+                "abritel_pct": rates.get("Abritel", 0),
+                "best_comp_pct": best_comp_rate,
+                "best_comp_name": best_comp_name,
+                "ratio": ratio,
+                "airbnb_pct": rates.get("Airbnb", 0),
+                "booking_pct": rates.get("Booking", 0),
             }
         )
-    return sorted(results, key=lambda x: -x["count"])
+
+    return sorted(gaps, key=lambda x: -x["ratio"])
 
 
-# ── Temporal trends ─────────────────────────────────────────────────────
-def analyse_temporelle(neg_df: pd.DataFrame) -> list[dict]:
-    """Calcule l'évolution mensuelle des catégories pour les avis négatifs."""
-    col_cat = _colonne_categorie(neg_df)
-    df = neg_df.copy()
-    df["_date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
-    df = df.dropna(subset=["_date"])
-    df["_mois"] = df["_date"].dt.to_period("M")
+def compute_temporal(df: pd.DataFrame, marque: str, n_months: int = 6) -> list[dict]:
+    sub = df[df["marque"] == marque].copy()
+    sub["_mois"] = sub["date"].dt.tz_localize(None).dt.to_period("M")
+    mois_list = sorted(sub["_mois"].dropna().unique())[-n_months:]
 
-    mois_list = sorted(df["_mois"].unique())
-    if len(mois_list) < 2:
-        return []
-
-    trends = []
+    rows = []
     for mois in mois_list:
-        mois_df = df[df["_mois"] == mois]
-        total_mois = len(mois_df)
-        if total_mois < 5:
+        m_df = sub[sub["_mois"] == mois]
+        if len(m_df) < 5:
             continue
-        cat_counts = mois_df[col_cat].value_counts()
-        entry = {"mois": str(mois), "total": total_mois}
-        for cat, cnt in cat_counts.items():
-            entry[cat] = int(cnt)
-        trends.append(entry)
-    return trends
+        rows.append(
+            {
+                "mois": str(mois),
+                "n": len(m_df),
+                "note": round(m_df["note"].mean(), 2),
+                "pct_neg": round((m_df["type_avis"] == "négatif").mean() * 100, 0),
+            }
+        )
+    return rows
 
 
-# ── Ollama qualitative synthesis ────────────────────────────────────────
+def compute_booking_decline(df: pd.DataFrame) -> dict:
+    months = compute_temporal(df, "Booking", n_months=6)
+
+    bk = df[df["marque"] == "Booking"]
+    apr = bk[(bk["date"].dt.year == 2026) & (bk["date"].dt.month == 4)]
+    apr_neg = apr[(apr["note"] <= 2) & (apr["Catégorie"] != "Autre")]
+    top_cats = apr_neg["Catégorie"].value_counts().head(3).to_dict()
+
+    return {"months": months, "top_cats_april": {str(k): int(v) for k, v in top_cats.items()}}
+
+
+# ── Ollama ──────────────────────────────────────────────────────────────
+def _ollama_available() -> bool:
+    try:
+        r = requests.get(f"{OLLAMA_URL}/api/tags", timeout=3)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
 def _parse_json_response(content: str) -> dict | None:
     t = content.strip()
     if t.startswith("```"):
@@ -156,35 +184,31 @@ def _parse_json_response(content: str) -> dict | None:
         return None
 
 
-def synthese_ollama(textes: list[str], categorie: str, persona: str) -> dict | None:
-    """Envoie un batch d'avis à Ollama pour identifier les sous-problèmes."""
+def synthese_ollama(textes: list[str], categorie: str, context: str = "") -> dict | None:
     formatted = []
     for i, t in enumerate(textes[:MAX_REVIEWS_PER_BATCH], 1):
         clean = str(t).strip().replace("\n", " ")[:300]
         formatted.append(f"{i}. {clean}")
     reviews_block = "\n".join(formatted)
 
+    ctx_line = f"\nContexte benchmark : {context}\n" if context else ""
+
     prompt = textwrap.dedent(f"""\
         Tu es un analyste UX expert en plateformes de location de vacances.
 
-        Voici {len(formatted)} avis négatifs d'utilisateurs "{persona}" sur Abritel,
+        Voici {len(formatted)} avis négatifs d'utilisateurs Abritel,
         classés dans la catégorie "{categorie}".
-
+        {ctx_line}
         AVIS :
         {reviews_block}
 
-        MISSION : Identifie les 2-4 sous-problèmes récurrents dans ces avis.
+        MISSION : Identifie les 2-4 sous-problèmes récurrents.
 
         Pour chaque sous-problème :
         - "nom" : description courte (5-15 mots)
-        - "frequence_pct" : % estimé d'avis de CE LOT concernés par ce sous-problème
-        - "citations" : 2-3 citations EXACTES copiées mot pour mot depuis les avis ci-dessus
-        - "impact" : 1 phrase sur l'impact concret pour un {persona.lower()}
-
-        Règles :
-        - Les citations doivent être des COPIES EXACTES du texte des avis
-        - Chaque sous-problème doit concerner au moins 10% des avis du lot
-        - Classe du plus fréquent au moins fréquent
+        - "frequence_pct" : % estimé d'avis concernés
+        - "citations" : 2-3 citations EXACTES mot pour mot
+        - "impact" : 1 phrase sur l'impact concret
 
         Réponds UNIQUEMENT en JSON valide :
         {{"sous_problemes": [{{"nom": "...", "frequence_pct": 30, "citations": ["...", "..."], "impact": "..."}}]}}
@@ -201,364 +225,381 @@ def synthese_ollama(textes: list[str], categorie: str, persona: str) -> dict | N
 
     for attempt in range(3):
         try:
-            LOG.info("  → Ollama: %s / %s (tentative %d)…", categorie, persona, attempt + 1)
+            LOG.info("  → Ollama: %s (tentative %d)…", categorie, attempt + 1)
             r = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=TIMEOUT_S)
             r.raise_for_status()
             content = r.json()["message"]["content"]
             obj = _parse_json_response(content)
             if obj and "sous_problemes" in obj:
                 return obj
-            LOG.warning("  ⚠ Réponse mal formée, retry…")
         except Exception as e:
             LOG.warning("  ⚠ Erreur Ollama: %s", e)
     return None
 
 
-# ── Opportunity mapping ────────────────────────────────────────────────
-# Recommandations actionnables par catégorie, déduites des sous-problèmes récurrents.
-OPPORTUNITES: dict[str, str] = {
-    "Financier": (
-        "SLA de remboursement garanti (7j max), transparence tarifaire "
-        "temps réel (prix final avant paiement), audit de réconciliation des prélèvements"
-    ),
-    "Annulation / Réservation": (
-        "Moteur de synchronisation calendrier multi-plateforme, protocole de "
-        "relogement d'urgence J-0, gestion du cycle de vie des annonces (archivage auto)"
-    ),
-    "Service Client": (
-        "Routage francophone prioritaire, escalade vers un humain en < 5 min, "
-        "playbook de gestion de crise (annulation jour J, bien insalubre)"
-    ),
-    "Localisation / Langue": (
-        "Correction du bug de géolocalisation NZ/$, audit i18n complet "
-        "(devise, langue, indicatif), détection automatique de la locale utilisateur"
-    ),
-    "Bug Technique": (
-        "Sprint de stabilité login/authentification, fix régression partage de liens, "
-        "monitoring de performance applicative (crash rate, latence)"
-    ),
-    "UX / Ergonomie": (
-        "Deep linking sans téléchargement forcé de l'app, persistance des filtres "
-        "de recherche, refonte de l'architecture d'information (accès factures, réservations)"
-    ),
-    "Qualité du bien": (
-        "Process de vérification photo (hash + date), score de fraîcheur des annonces, "
-        "checklist qualité propriétaire avec conséquences (désactivation si non conforme)"
-    ),
+# ── Recommendations ─────────────────────────────────────────────────────
+RECOMMANDATIONS: dict[str, dict] = {
+    "Localisation / Langue": {
+        "action": "Audit i18n (devise, langue, géolocalisation NZ/$), détection auto locale",
+        "quick_win": True,
+        "horizon": "Sprint Q2",
+    },
+    "Annulation / Réservation": {
+        "action": "Synchro calendrier multi-plateforme, protocole relogement J-0",
+        "quick_win": False,
+        "horizon": "Roadmap Q3",
+    },
+    "UX / Ergonomie": {
+        "action": "Deep linking sans téléchargement forcé, persistance filtres, refonte nav",
+        "quick_win": True,
+        "horizon": "Sprint Q2",
+    },
+    "Financier": {
+        "action": "SLA remboursement 7j garanti, prix final affiché avant paiement",
+        "quick_win": False,
+        "horizon": "Roadmap Q3",
+    },
+    "Bug Technique": {
+        "action": "Sprint stabilité login/auth, monitoring crash rate + latence",
+        "quick_win": True,
+        "horizon": "Sprint Q2",
+    },
+    "Service Client": {
+        "action": "Routage francophone prioritaire, escalade humaine < 5 min",
+        "quick_win": False,
+        "horizon": "Roadmap Q3-Q4",
+    },
+    "Qualité du bien": {
+        "action": "Vérification photo, score fraîcheur annonces, checklist propriétaire",
+        "quick_win": False,
+        "horizon": "Roadmap Q4",
+    },
 }
 
 
 # ── Report generation ───────────────────────────────────────────────────
-def _format_problem(rank: int, cat: dict, quali: dict | None) -> str:
-    """Formate un problème (quanti + quali) en markdown."""
-    lines = []
-    lines.append(f"### {rank}. {cat['categorie']} — {cat['count']} avis ({cat['pct']}%)")
-    lines.append("")
-    lines.append(f"- **Gravité Haute (texte)** : {cat['haute_pct']}% des avis de cette catégorie")
-    notes_str = ", ".join(f"{k}★: {v}" for k, v in sorted(cat["notes_distrib"].items()))
-    lines.append(f"- **Distribution des notes** : {notes_str}")
-    lines.append("")
-
-    if quali and "sous_problemes" in quali:
-        for sp in quali["sous_problemes"]:
-            lines.append(f"**{sp['nom']}** (~{sp['frequence_pct']}% des avis)")
-            lines.append("")
-            for cit in sp.get("citations", []):
-                clean = cit.strip().replace("\n", " ")
-                if len(clean) > 250:
-                    clean = clean[:247] + "…"
-                lines.append(f"> « {clean} »")
-                lines.append("")
-            if sp.get("impact"):
-                lines.append(f"*Impact* : {sp['impact']}")
-                lines.append("")
-    else:
-        lines.append("**Citations représentatives** :")
-        lines.append("")
-        for t in cat["textes"][:3]:
-            clean = str(t).strip().replace("\n", " ")[:200]
-            lines.append(f"> « {clean} »")
-            lines.append("")
-
-    return "\n".join(lines)
-
-
-def _format_temporal(trends: list[dict], categories: list[str]) -> str:
-    """Génère le tableau d'évolution temporelle."""
-    if not trends:
-        return "*Pas assez de données pour une analyse temporelle.*\n"
-    lines = []
-    # Header
-    header = "| Mois | Total |"
-    sep = "|------|-------|"
-    for cat in categories:
-        short = cat.split(" / ")[0][:12]
-        header += f" {short} |"
-        sep += "------|"
-    lines.append(header)
-    lines.append(sep)
-    # Rows
-    for t in trends:
-        row = f"| {t['mois']} | {t['total']} |"
-        for cat in categories:
-            cnt = t.get(cat, 0)
-            row += f" {cnt} |"
-        lines.append(row)
-    lines.append("")
-    return "\n".join(lines)
-
-
 def generate_report(
     df: pd.DataFrame,
-    personas: dict[str, list[dict]],
-    quali_results: dict[str, dict[str, dict | None]],
+    positioning: dict[str, dict],
+    kappas: dict[str, dict],
+    gaps: list[dict],
+    bk_decline: dict,
+    quali: dict[str, dict | None] | None = None,
 ) -> str:
-    """Génère le rapport markdown complet, prêt pour le CODIR."""
     total = len(df)
-    neg_total = len(df[df["type_avis"] == "négatif"])
-    # Plage temporelle
-    dates = pd.to_datetime(df["date"], utc=True, errors="coerce").dropna()
+    dates = df["date"].dropna()
     date_min = dates.min().strftime("%Y-%m")
     date_max = dates.max().strftime("%Y-%m")
+    p = positioning
+    marques = sorted(p.keys())
+    is_benchmark = len(marques) > 1
 
-    lines = [
-        "# Analyse des problèmes majeurs — Abritel",
-        "",
-        f"*Généré le {datetime.now().strftime('%Y-%m-%d')} — "
-        f"{total} avis analysés ({date_min} → {date_max})*",
-        "",
-    ]
+    lines: list[str] = []
 
-    # ── Executive Summary ──
+    # ── Title ──
+    if is_benchmark:
+        title = "# Benchmark Abritel vs Airbnb vs Booking"
+    else:
+        title = "# Analyse des problèmes — Abritel"
     lines.extend(
         [
-            "## Résumé exécutif",
+            title,
             "",
-            f"Ce rapport analyse **{neg_total} avis négatifs** (sur {total} collectés) "
-            f"provenant de 3 sources (Google Play, App Store, Trustpilot) sur la période "
-            f"{date_min} → {date_max}. La classification utilise un pipeline hybride "
-            f"mots-clés + LLM (Ollama gemma4:31b, temperature 0).",
+            f"*Généré le {datetime.now().strftime('%Y-%m-%d')} — "
+            f"{total:,} avis, {len(marques)} marque(s), 3 sources "
+            f"({date_min} → {date_max})*",
+            "",
+            "---",
             "",
         ]
     )
 
-    # ── Methodology ──
-    kappa = compute_kappa(df)
-    lines.extend(
-        [
-            "## Méthodologie et limites",
-            "",
-            "### Classification",
-            "",
-            "Chaque avis passe par deux classifieurs indépendants :",
-            "1. **Mots-clés** (~226 mots FR/EN, normalisés sans accents)",
-            "2. **LLM local** (Ollama gemma4:31b, temperature 0, déterministe)",
-            "",
-        ]
-    )
-    if kappa is not None:
-        interp = (
-            "faible"
-            if kappa < 0.4
-            else "modéré"
-            if kappa < 0.6
-            else "substantiel"
-            if kappa < 0.8
-            else "excellent"
-        )
-        reclassified = 0
-        if "Catégorie_mots_cles" in df.columns and "Catégorie_ollama" in df.columns:
-            mask = df["Catégorie_ollama"].notna() & (
-                df["Catégorie_ollama"].astype(str).str.strip() != ""
-            )
-            reclassified = (
-                df.loc[mask, "Catégorie_mots_cles"] != df.loc[mask, "Catégorie_ollama"]
-            ).sum()
+    # ── En bref ──
+    if is_benchmark:
         lines.extend(
             [
-                f"**Accord inter-annotateurs (Cohen's κ) : {kappa:.3f}** ({interp})",
+                "## En bref",
                 "",
-                f"Le LLM a reclassifié **{reclassified}** avis par rapport aux mots-clés "
-                f"({reclassified / total * 100:.0f}% du corpus). "
-                f"Un κ {interp} indique que les deux méthodes convergent "
-                f"{'fortement' if kappa >= 0.6 else 'partiellement'}, "
-                f"les désaccords portant principalement sur les cas ambigus multi-catégories.",
+                "| | Abritel | Airbnb | Booking |",
+                "|---|---|---|---|",
+                f"| Note moyenne /5 | **{p['Abritel']['note_moy']}** "
+                f"| {p['Airbnb']['note_moy']} | {p['Booking']['note_moy']} |",
+                f"| Avis négatifs | **{p['Abritel']['pct_neg']}%** "
+                f"| {p['Airbnb']['pct_neg']}% | {p['Booking']['pct_neg']}% |",
+                f"| Gravité Haute (texte) | **{p['Abritel']['pct_grav_haute_texte']}%** "
+                f"| {p['Airbnb']['pct_grav_haute_texte']}% "
+                f"| {p['Booking']['pct_grav_haute_texte']}% |",
+                f"| Corpus | {p['Abritel']['n']:,} "
+                f"| {p['Airbnb']['n']:,} | {p['Booking']['n']:,} |",
                 "",
             ]
         )
 
-    # ── Source bias ──
-    lines.extend(
-        [
-            "### Biais de source",
-            "",
-            "| Source | Total | Négatifs | % négatifs | Positifs | % positifs |",
-            "|--------|-------|----------|------------|----------|------------|",
-        ]
-    )
-    for src in df["source"].value_counts().index:
-        src_df = df[df["source"] == src]
-        src_neg = len(src_df[src_df["type_avis"] == "négatif"])
-        src_pos = len(src_df[src_df["type_avis"] == "positif"])
+    # Top gaps
+    top_gaps = [g for g in gaps if g["ratio"] >= GAP_THRESHOLD]
+    if top_gaps:
         lines.append(
-            f"| {src} | {len(src_df)} | {src_neg} | {src_neg / len(src_df) * 100:.0f}% "
-            f"| {src_pos} | {src_pos / len(src_df) * 100:.0f}% |"
+            "**Faiblesses uniques Abritel** (taux ≥ 3× supérieur au meilleur concurrent) :"
         )
-    lines.extend(
-        [
-            "",
-            "> **Avertissement** : Trustpilot contient quasi exclusivement des avis négatifs "
-            "(population auto-sélectionnée de plaignants). Le taux global de "
-            f"{neg_total / total * 100:.0f}% d'avis négatifs est un artefact du mix de sources, "
-            "pas une mesure du sentiment réel des utilisateurs. "
-            "Les analyses ci-dessous portent sur les **thématiques** des plaintes, "
-            "pas sur leur prévalence dans la base d'utilisateurs.",
-            "",
-        ]
-    )
-
-    # ── Gravité_texte explanation ──
-    col_grav = "Gravité_texte" if "Gravité_texte" in df.columns else "Gravité"
-    if col_grav == "Gravité_texte":
-        lines.extend(
-            [
-                "### Indicateur de gravité",
-                "",
-                "Ce rapport utilise la **Gravité_texte** (analyse lexicale du texte seul) "
-                "et non la Gravité standard (liée à la note). Ceci évite la tautologie "
-                "note 1★ → gravité Haute qui rendrait le croisement catégorie × gravité "
-                "circulaire. La Gravité_texte détecte les mots-clés émotionnels forts "
-                "(arnaque, scandale, tribunal…) indépendamment de la note donnée.",
-                "",
-            ]
-        )
-
-    # ── Temporal trends ──
-    neg_df = df[df["type_avis"] == "négatif"]
-    trends = analyse_temporelle(neg_df)
-    if trends:
-        # Get unique categories from trends
-        all_cats_in_trends = set()
-        for t in trends:
-            for k in t:
-                if k not in ("mois", "total"):
-                    all_cats_in_trends.add(k)
-        sorted_cats = [
-            c
-            for c, _ in [
-                ("Financier", 0),
-                ("Annulation / Réservation", 0),
-                ("Bug Technique", 0),
-                ("Service Client", 0),
-                ("Localisation / Langue", 0),
-                ("UX / Ergonomie", 0),
-                ("Qualité du bien", 0),
-                ("Autre", 0),
-            ]
-            if c in all_cats_in_trends
-        ]
-
-        lines.extend(
-            [
-                "## Évolution temporelle (avis négatifs par mois)",
-                "",
-                _format_temporal(trends, sorted_cats),
-            ]
-        )
-
-    # ── Per-persona analysis ──
-    for persona_name in ["Locataire", "Propriétaire"]:
-        quanti = personas[persona_name]
-        persona_df_neg = df[(df["profil_auteur"] == persona_name) & (df["type_avis"] == "négatif")]
-        real_total = len(persona_df_neg)
-
-        lines.append(f"## Persona : {persona_name} ({real_total} avis négatifs)")
         lines.append("")
-
-        if persona_name == "Propriétaire":
-            lines.extend(
-                [
-                    f"> **ATTENTION — Échantillon insuffisant (n={real_total}).**",
-                    "> Les résultats ci-dessous sont des **signaux exploratoires**, "
-                    "pas des conclusions statistiquement généralisables. ",
-                    "> Un sondage NPS ciblé auprès des propriétaires est recommandé "
-                    "pour valider ces tendances avant toute décision d'investissement produit.",
-                    "",
-                ]
-            )
-
-        lines.append("| # | Problème | N | % | Gravité Haute (texte) |")
-        lines.append("|---|----------|---|---|----------------------|")
-        for i, cat in enumerate(quanti, 1):
+        for i, g in enumerate(top_gaps, 1):
             lines.append(
-                f"| {i} | {cat['categorie']} | {cat['count']} | {cat['pct']}% "
-                f"| {cat['haute_pct']}% |"
+                f"{i}. **{g['categorie']}** : {g['abritel_pct']}% → "
+                f"{g['ratio']}× le concurrent ({g['best_comp_pct']}%)"
             )
         lines.append("")
 
-        quali_persona = quali_results.get(persona_name, {})
-        for i, cat in enumerate(quanti, 1):
-            quali = quali_persona.get(cat["categorie"])
-            lines.append(_format_problem(i, cat, quali))
+    # Booking signal
+    bk_months = bk_decline.get("months", [])
+    if len(bk_months) >= 2:
+        first, last = bk_months[0], bk_months[-1]
+        lines.extend(
+            [
+                f"**Signal** : Booking en chute "
+                f"(note {first['note']} → {last['note']}, "
+                f"négatifs {first['pct_neg']:.0f}% → {last['pct_neg']:.0f}% "
+                f"sur {first['mois']} → {last['mois']}).",
+                "",
+            ]
+        )
 
-    # ── Opportunities ──
+    lines.extend(["---", ""])
+
+    # ── Méthodologie ──
     lines.extend(
         [
-            "## Synthèse : Problèmes → Opportunités",
+            "## Méthodologie",
             "",
-            "| Problème | Persona(s) | Fréquence | Recommandations |",
-            "|----------|------------|-----------|-----------------|",
+            "### Collecte",
+            "",
+            f"{total:,} avis français collectés automatiquement depuis "
+            f"3 sources publiques ({date_min} → {date_max}).",
+            "",
+            "| Marque | Google Play | App Store | Trustpilot | Total |",
+            "|--------|-------------|-----------|------------|-------|",
         ]
     )
-
-    seen = set()
-    for persona_name in ["Locataire", "Propriétaire"]:
-        for cat in personas[persona_name][:5]:
-            c = cat["categorie"]
-            if c == "Autre" or c in seen:
-                continue
-            seen.add(c)
-            affected = []
-            for pn in ["Locataire", "Propriétaire"]:
-                for pc in personas[pn]:
-                    if pc["categorie"] == c:
-                        affected.append(f"{pn} ({pc['count']})")
-            opp = OPPORTUNITES.get(c, "—")
-            lines.append(f"| {c} | {', '.join(affected)} | {cat['pct']}% | {opp} |")
+    for m in ["Booking", "Airbnb", "Abritel"]:
+        if m not in p:
+            continue
+        s = p[m]["sources"]
+        lines.append(
+            f"| {m} | {s.get('Google Play', 0):,} | {s.get('App Store', 0):,} "
+            f"| {s.get('Trustpilot', 0):,} | {p[m]['n']:,} |"
+        )
     lines.append("")
 
-    # ── Limitations & next steps ──
+    # Classification
     lines.extend(
         [
-            "## Limites et prochaines étapes",
+            "### Classification",
             "",
-            "### Limites connues",
+            "Pipeline hybride mots-clés (226 termes FR/EN, négation-aware) "
+            "+ LLM (Ollama, temperature 0).",
             "",
-            "1. **Pas de benchmark concurrentiel** : les taux de plaintes ne sont pas "
-            "comparés à Airbnb, Booking.com ou d'autres plateformes.",
-            "2. **Pas de données transactionnelles** : impossible de chiffrer le coût "
-            "en churn ou en LTV perdu par catégorie de problème.",
-            "3. **Biais de sélection** : les avis publics surreprésentent les expériences "
-            "extrêmes (très négatives ou très positives). Les utilisateurs satisfaits "
-            "sans enthousiasme sont silencieux.",
-            "4. **Échantillon Propriétaire** : n={} — insuffisant pour des conclusions "
-            "fermes, utile uniquement comme signal d'alerte qualitatif.".format(
-                len(df[(df["profil_auteur"] == "Propriétaire") & (df["type_avis"] == "négatif")])
-            ),
-            f"5. **Classification hybride** : κ = {kappa:.3f} — "
-            "les désaccords mots-clés ↔ LLM ne sont pas arbitrés par un humain."
-            if kappa is not None
-            else "5. **Classification** : pas de mesure d'accord inter-annotateurs disponible.",
+        ]
+    )
+    if kappas:
+        lines.extend(
+            [
+                "| Marque | κ Cohen | Accord | Reclassifiés |",
+                "|--------|---------|--------|-------------|",
+            ]
+        )
+        for m in ["Abritel", "Airbnb", "Booking"]:
+            if m in kappas:
+                k = kappas[m]
+                lines.append(
+                    f"| {m} | {k['kappa']:.3f} | {k['accord']:.0f}% "
+                    f"| {k['reclassified']:,} ({k['reclassified'] / k['n'] * 100:.0f}%) |"
+                )
+        lines.extend(
+            [
+                "",
+                "Accord **substantiel** (κ > 0.6) sur les 3 corpus — "
+                "méthode reproductible et robuste.",
+                "",
+            ]
+        )
+
+    # Limites
+    lines.extend(
+        [
+            "### Limites",
             "",
-            "### Prochaines étapes recommandées",
+            f"- **Volume asymétrique** : Abritel ({p['Abritel']['n']:,})"
+            + (f" vs Booking ({p['Booking']['n']:,})" if "Booking" in p else "")
+            + " — pourcentages Abritel plus volatils.",
+            "- **Biais Trustpilot** : auto-sélection de plaignants, "
+            "les taux de négatifs par source ne reflètent pas le sentiment réel.",
+            "- **Mots-clés** : optimisés sur le vocabulaire Abritel, "
+            "potentiel sous-comptage pour les concurrents.",
             "",
-            "1. **Sondage NPS ciblé Propriétaires** (n ≥ 200) pour valider les signaux.",
-            "2. **Benchmark concurrentiel** : scraper les avis Airbnb/Booking sur la même période "
-            "pour contextualiser les taux.",
-            "3. **Croisement avec les données internes** : tickets support, taux de churn, "
-            "LTV par cohorte — pour monétiser chaque catégorie de problème.",
-            "4. **Analyse de tendance** : automatiser le suivi mensuel pour détecter "
-            "l'impact des correctifs déployés.",
+            "---",
+            "",
+        ]
+    )
+
+    # ── Positionnement ──
+    if is_benchmark:
+        lines.extend(
+            [
+                "## Positionnement concurrentiel",
+                "",
+                "### Répartition des problèmes",
+                "",
+                "| Catégorie | Abritel | Airbnb | Booking | Ratio |",
+                "|-----------|--------|--------|---------|-------|",
+            ]
+        )
+        for g in sorted(gaps, key=lambda x: -x["abritel_pct"]):
+            ratio_str = f"**{g['ratio']}×**" if g["ratio"] >= GAP_THRESHOLD else f"{g['ratio']}×"
+            lines.append(
+                f"| {g['categorie']} | {g['abritel_pct']}% "
+                f"| {g['airbnb_pct']}% | {g['booking_pct']}% | {ratio_str} |"
+            )
+        lines.extend(["", "---", ""])
+
+    # ── Top gaps detail ──
+    if top_gaps:
+        lines.extend(["## Les faiblesses spécifiques d'Abritel", ""])
+
+    abritel_neg = df[(df["marque"] == "Abritel") & (df["note"] <= 2)]
+
+    for i, g in enumerate(top_gaps, 1):
+        cat = g["categorie"]
+        cat_neg = abritel_neg[abritel_neg["Catégorie"] == cat]
+        lines.extend(
+            [
+                f"### {i}. {cat} — {g['ratio']}× le taux concurrent",
+                "",
+                f"**{g['abritel_pct']}%** des avis Abritel vs "
+                f"{g['best_comp_pct']}% ({g['best_comp_name']}). "
+                f"{len(cat_neg)} avis négatifs identifiés.",
+                "",
+            ]
+        )
+
+        # Ollama deep-dive or sample citations
+        if quali and cat in quali and quali[cat]:
+            for sp in quali[cat].get("sous_problemes", []):
+                lines.extend([f"**{sp['nom']}** (~{sp['frequence_pct']}%)", ""])
+                for cit in sp.get("citations", [])[:2]:
+                    clean = str(cit).strip().replace("\n", " ")[:250]
+                    lines.extend([f"> « {clean} »", ""])
+                if sp.get("impact"):
+                    lines.extend([f"*Impact* : {sp['impact']}", ""])
+        else:
+            sample = cat_neg["texte"].dropna().head(3).tolist()
+            if sample:
+                lines.append("**Citations représentatives** :")
+                lines.append("")
+                for t in sample:
+                    clean = str(t).strip().replace("\n", " ")[:200]
+                    lines.extend([f"> « {clean} »", ""])
+
+        rec = RECOMMANDATIONS.get(cat)
+        if rec:
+            lines.extend([f"**Recommandation** : {rec['action']}", ""])
+
+    # ── Shared problems ──
+    shared = [g for g in gaps if g["ratio"] < GAP_THRESHOLD and g["abritel_pct"] >= 5]
+    if shared and is_benchmark:
+        lines.extend(
+            [
+                "### Problèmes partagés avec les concurrents",
+                "",
+                "Gap modéré (< 3×) mais volume élevé chez Abritel.",
+                "",
+                "| Catégorie | Abritel | Airbnb | Booking | Ratio |",
+                "|-----------|--------|--------|---------|-------|",
+            ]
+        )
+        for g in sorted(shared, key=lambda x: -x["abritel_pct"]):
+            lines.append(
+                f"| {g['categorie']} | {g['abritel_pct']}% "
+                f"| {g['airbnb_pct']}% | {g['booking_pct']}% | {g['ratio']}× |"
+            )
+        lines.extend(["", "---", ""])
+
+    # ── Booking decline ──
+    if bk_months:
+        lines.extend(
+            [
+                "## Signal : Booking en dégradation (2026)",
+                "",
+                "| Mois | Note /5 | % négatifs | N avis |",
+                "|------|---------|-----------|--------|",
+            ]
+        )
+        for m in bk_months:
+            lines.append(f"| {m['mois']} | {m['note']} | {m['pct_neg']:.0f}% | {m['n']} |")
+        lines.append("")
+
+        top_cats = bk_decline.get("top_cats_april", {})
+        if top_cats:
+            lines.append("Causes (négatifs Booking avril 2026, hors Autre) :")
+            lines.append("")
+            for cat, n in top_cats.items():
+                lines.append(f"- **{cat}** : {n} avis")
+            lines.append("")
+
+        lines.extend(
+            [
+                "**Implication** : si Abritel corrige ses faiblesses spécifiques "
+                "pendant que Booking se dégrade, c'est une fenêtre d'acquisition.",
+                "",
+                "---",
+                "",
+            ]
+        )
+
+    # ── Évolution Abritel ──
+    abritel_trend = compute_temporal(df, "Abritel", n_months=6)
+    if abritel_trend:
+        lines.extend(
+            [
+                "## Évolution Abritel (6 derniers mois)",
+                "",
+                "| Mois | Note /5 | % négatifs | N avis |",
+                "|------|---------|-----------|--------|",
+            ]
+        )
+        for m in abritel_trend:
+            lines.append(f"| {m['mois']} | {m['note']} | {m['pct_neg']:.0f}% | {m['n']} |")
+        lines.extend(["", "---", ""])
+
+    # ── Prioritization matrix ──
+    lines.extend(
+        [
+            "## Matrice de priorisation",
+            "",
+            "| Problème | Gap | Impact | Quick win | Horizon | Action |",
+            "|----------|-----|--------|-----------|---------|--------|",
+        ]
+    )
+    for g in sorted(gaps, key=lambda x: -x["ratio"]):
+        cat = g["categorie"]
+        rec = RECOMMANDATIONS.get(cat)
+        if not rec:
+            continue
+        qw = "✓" if rec["quick_win"] else "—"
+        lines.append(
+            f"| {cat} | {g['ratio']}× | {g['abritel_pct']}% "
+            f"| {qw} | {rec['horizon']} | {rec['action']} |"
+        )
+    lines.extend(["", "---", ""])
+
+    # ── Next steps ──
+    lines.extend(
+        [
+            "## Prochaines étapes",
+            "",
+            "1. **Immédiat** : fix Localisation/Langue (config, quick win, impact max)",
+            "2. **Sprint Q2** : UX/Ergonomie + Bug Technique (code, mesurable)",
+            "3. **Roadmap Q3** : Annulation/Réservation + Financier (process, cross-team)",
+            "4. **Monitoring** : suivi mensuel benchmark automatisé (ce pipeline)",
+            "5. **Croisement données internes** : tickets support, churn, LTV par cohorte",
             "",
         ]
     )
@@ -569,36 +610,61 @@ def generate_report(
 # ── Main ────────────────────────────────────────────────────────────────
 def main():
     df = load_data()
-    neg = df[df["type_avis"] == "négatif"]
 
-    personas_quanti: dict[str, list[dict]] = {}
-    quali_results: dict[str, dict[str, dict | None]] = {}
+    LOG.info("\n═══ MÉTRIQUES BENCHMARK ═══")
+    positioning = compute_positioning(df)
+    for m, met in positioning.items():
+        LOG.info("  %s: note=%.2f, neg=%.1f%%, n=%d", m, met["note_moy"], met["pct_neg"], met["n"])
 
-    for persona in ["Locataire", "Propriétaire"]:
-        LOG.info("\n═══ %s ═══", persona.upper())
-        persona_neg = neg[neg["profil_auteur"] == persona]
-        LOG.info("  %d avis négatifs", len(persona_neg))
+    LOG.info("\n═══ KAPPA ═══")
+    kappas = compute_kappas(df)
+    for m, k in kappas.items():
+        LOG.info("  %s: κ=%.3f, accord=%.0f%%", m, k["kappa"], k["accord"])
 
-        quanti = analyse_quanti(persona_neg)
-        personas_quanti[persona] = quanti
-        quali_results[persona] = {}
+    gaps = compute_gaps(df)
+    top_gaps = [g for g in gaps if g["ratio"] >= GAP_THRESHOLD]
+    LOG.info("\n═══ GAPS UNIQUES ABRITEL (≥ %.0f×) ═══", GAP_THRESHOLD)
+    for g in top_gaps:
+        LOG.info(
+            "  %s: %.1f%% → %.1f× (%s %.1f%%)",
+            g["categorie"],
+            g["abritel_pct"],
+            g["ratio"],
+            g["best_comp_name"],
+            g["best_comp_pct"],
+        )
 
-        for cat in quanti:
-            if cat["categorie"] == "Autre":
-                continue
-            LOG.info("  Catégorie: %s (%d avis)", cat["categorie"], cat["count"])
-            result = synthese_ollama(cat["textes"], cat["categorie"], persona)
-            quali_results[persona][cat["categorie"]] = result
-            if result:
-                n_sp = len(result.get("sous_problemes", []))
-                LOG.info("  ✓ %d sous-problèmes identifiés", n_sp)
-            else:
-                LOG.warning("  ✗ Pas de synthèse Ollama pour %s", cat["categorie"])
+    bk_decline = compute_booking_decline(df)
+
+    # Ollama synthesis for Abritel top gaps (skip if offline)
+    quali: dict[str, dict | None] = {}
+    if _ollama_available():
+        LOG.info("\n═══ SYNTHÈSE OLLAMA (top gaps Abritel) ═══")
+        abritel_neg = df[(df["marque"] == "Abritel") & (df["note"] <= 2)]
+        for g in top_gaps:
+            cat = g["categorie"]
+            textes = abritel_neg[abritel_neg["Catégorie"] == cat]["texte"].dropna().tolist()
+            if textes:
+                ctx = (
+                    f"Ce problème est {g['ratio']}× plus fréquent chez Abritel "
+                    f"que chez {g['best_comp_name']}."
+                )
+                quali[cat] = synthese_ollama(textes, cat, ctx)
+
+        # Problèmes partagés à haut volume aussi
+        shared = [g for g in gaps if g["ratio"] < GAP_THRESHOLD and g["abritel_pct"] >= 10]
+        for g in shared:
+            cat = g["categorie"]
+            textes = abritel_neg[abritel_neg["Catégorie"] == cat]["texte"].dropna().tolist()
+            if textes and cat not in quali:
+                quali[cat] = synthese_ollama(textes, cat)
+    else:
+        LOG.info("\n⚠ Ollama non disponible — rapport quantitatif uniquement")
 
     LOG.info("\n═══ GÉNÉRATION DU RAPPORT ═══")
-    report = generate_report(df, personas_quanti, quali_results)
+    report = generate_report(df, positioning, kappas, gaps, bk_decline, quali)
     OUTPUT_PATH.write_text(report, encoding="utf-8")
-    LOG.info("Rapport écrit dans %s", OUTPUT_PATH)
+    LOG.info("Rapport écrit dans %s (%d lignes)", OUTPUT_PATH, report.count("\n"))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,23 @@
+{
+  "last_run": "2026-04-21T21:57:31Z",
+  "n_avis_total": 747,
+  "n_avis_nouveaux": 747,
+  "sources": {
+    "Google Play": 459,
+    "Trustpilot": 200,
+    "App Store": 88
+  },
+  "pct_autre": 25.8,
+  "autre_breakdown": {
+    "positif court": 149,
+    "neutre": 31,
+    "positif thématique": 8,
+    "négatif non catégorisé": 5
+  },
+  "circuit_breaker_triggered": false,
+  "spikes": [
+    "SPIKE Financier : 40.0% cette semaine vs 13.9% ± 7.6% (4 sem. préc.)",
+    "SPIKE UX / Ergonomie : 20.0% cette semaine vs 6.2% ± 5.2% (4 sem. préc.)"
+  ],
+  "keywords_hash": "b50e4c32"
+}

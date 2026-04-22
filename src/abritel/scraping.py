@@ -8,6 +8,7 @@ import random
 import threading
 import time
 from datetime import date, datetime
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -32,6 +33,32 @@ APPSTORE_APP_ID = "642441300"
 
 TRUSTPILOT_URL = "https://fr.trustpilot.com/review/abritel.fr"
 TRUSTPILOT_PAGES_PAR_FILTRE = 10
+
+
+class MarqueConfig(NamedTuple):
+    """Configuration d'une marque pour le scraping multi-sources."""
+
+    nom: str
+    gp_app_id: str
+    appstore_app_id: str
+    trustpilot_url: str
+
+
+MARQUES: dict[str, MarqueConfig] = {
+    "abritel": MarqueConfig("Abritel", GP_APP_ID, APPSTORE_APP_ID, TRUSTPILOT_URL),
+    "airbnb": MarqueConfig(
+        "Airbnb",
+        "com.airbnb.android",
+        "401626263",
+        "https://fr.trustpilot.com/review/airbnb.fr",
+    ),
+    "booking": MarqueConfig(
+        "Booking",
+        "com.booking",
+        "367003839",
+        "https://fr.trustpilot.com/review/www.booking.com",
+    ),
+}
 
 # --- Session HTTP ---
 
@@ -161,7 +188,9 @@ def parse_datetime_utc(value: str) -> datetime | None:
 # --- Scrapers ---
 
 
-def telecharger_avis_google_play(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> pd.DataFrame:
+def telecharger_avis_google_play(
+    *, date_debut: date = DATE_DEBUT_INCLUSIVE, app_id: str = GP_APP_ID
+) -> pd.DataFrame:
     """Pagination complète du plus récent au plus ancien, filtre sur la fenêtre."""
     fin = date_fin_inclusive()
     lignes: list[dict] = []
@@ -173,7 +202,7 @@ def telecharger_avis_google_play(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> 
         for tentative in range(5):
             try:
                 lot, token = reviews(
-                    GP_APP_ID,
+                    app_id,
                     lang="fr",
                     country="fr",
                     sort=Sort.NEWEST,
@@ -223,7 +252,9 @@ def telecharger_avis_google_play(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> 
     return out
 
 
-def telecharger_avis_app_store(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> pd.DataFrame:
+def telecharger_avis_app_store(
+    *, date_debut: date = DATE_DEBUT_INCLUSIVE, app_id: str = APPSTORE_APP_ID
+) -> pd.DataFrame:
     """API RSS Apple : 500 avis les plus récents (10 pages de 50)."""
     fin = date_fin_inclusive()
     lignes: list[dict] = []
@@ -232,7 +263,7 @@ def telecharger_avis_app_store(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> pd
     for page in range(1, 11):
         url = (
             f"https://itunes.apple.com/fr/rss/customerreviews"
-            f"/page={page}/id={APPSTORE_APP_ID}/sortBy=mostRecent/json"
+            f"/page={page}/id={app_id}/sortBy=mostRecent/json"
         )
         payload = get_json(url, timeout_s=15, tentatives=3)
         if payload is None:
@@ -292,6 +323,7 @@ def _trustpilot_pages(
     *,
     date_debut: date = DATE_DEBUT_INCLUSIVE,
     _pw_page=None,
+    base_url: str = TRUSTPILOT_URL,
 ) -> list[dict]:
     """Pagine Trustpilot (max TRUSTPILOT_PAGES_PAR_FILTRE) pour un jeu de paramètres."""
     fin = date_fin_inclusive()
@@ -299,11 +331,7 @@ def _trustpilot_pages(
 
     for page in range(1, TRUSTPILOT_PAGES_PAR_FILTRE + 1):
         sep = "&" if params else "?"
-        url = (
-            f"{TRUSTPILOT_URL}?{params}{sep}page={page}"
-            if params
-            else f"{TRUSTPILOT_URL}?page={page}"
-        )
+        url = f"{base_url}?{params}{sep}page={page}" if params else f"{base_url}?page={page}"
 
         if _pw_page is not None:
             html = _trustpilot_get_html(_pw_page, url)
@@ -367,7 +395,9 @@ def _playwright_disponible() -> bool:
         return False
 
 
-def telecharger_avis_trustpilot(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> pd.DataFrame:
+def telecharger_avis_trustpilot(
+    *, date_debut: date = DATE_DEBUT_INCLUSIVE, trustpilot_url: str = TRUSTPILOT_URL
+) -> pd.DataFrame:
     """Pagination par filtre d'étoiles (1-5).
 
     Utilise Playwright (headless Chromium) pour contourner le challenge AWS WAF
@@ -386,7 +416,12 @@ def telecharger_avis_trustpilot(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> p
             for stars in range(1, 6):
                 if stars > 1:
                     time.sleep(2 + random.uniform(0, 1))
-                batch = _trustpilot_pages(f"stars={stars}", date_debut=date_debut, _pw_page=pw_page)
+                batch = _trustpilot_pages(
+                    f"stars={stars}",
+                    date_debut=date_debut,
+                    _pw_page=pw_page,
+                    base_url=trustpilot_url,
+                )
                 lignes.extend(batch)
                 LOG.info("Trustpilot: %s étoile(s): %s avis", stars, len(batch))
 
@@ -396,7 +431,9 @@ def telecharger_avis_trustpilot(*, date_debut: date = DATE_DEBUT_INCLUSIVE) -> p
         for stars in range(1, 6):
             if stars > 1:
                 time.sleep(3 + random.uniform(0, 1))
-            batch = _trustpilot_pages(f"stars={stars}", date_debut=date_debut)
+            batch = _trustpilot_pages(
+                f"stars={stars}", date_debut=date_debut, base_url=trustpilot_url
+            )
             lignes.extend(batch)
             LOG.info("Trustpilot: %s étoile(s): %s avis", stars, len(batch))
 

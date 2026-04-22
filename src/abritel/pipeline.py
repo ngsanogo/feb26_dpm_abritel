@@ -12,6 +12,7 @@ import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
@@ -31,7 +32,9 @@ from abritel.categorisation import (
 from abritel.ollama_categorisation import appliquer_categorisation_ollama, ollama_actif
 from abritel.scraping import (
     DATE_DEBUT_INCLUSIVE,
+    MARQUES,
     TZ_FR,
+    MarqueConfig,
     avis_jour_paris,
     dans_fenetre,
     date_fin_inclusive,
@@ -53,7 +56,9 @@ _ENV_SOFT_CIRCUIT_BREAKER = "ABRITEL_SOFT_CIRCUIT_BREAKER"
 __all__ = [
     "CATEGORIES_ABRITEL",
     "DATE_DEBUT_INCLUSIVE",
+    "MARQUES",
     "MARGE_JOURS_INCREMENTAL",
+    "MarqueConfig",
     "TZ_FR",
     "appliquer_categorisation_ollama",
     "avis_jour_paris",
@@ -456,9 +461,15 @@ def _soft_circuit_breaker_ci() -> bool:
     return v in {"1", "true", "yes", "on"}
 
 
-def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -> pd.DataFrame:
+def run_pipeline(
+    *,
+    chemin_csv: Path,
+    date_debut: date = DATE_DEBUT_INCLUSIVE,
+    marque: MarqueConfig | None = None,
+) -> pd.DataFrame:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    LOG.info("=== Démarrage du pipeline Abritel (3 sources, France) ===")
+    nom_marque = marque.nom if marque else "Abritel"
+    LOG.info("=== Démarrage du pipeline %s (3 sources, France) ===", nom_marque)
     fin = date_fin_inclusive()
 
     # Détecter si les mots-clés ont changé depuis le dernier run → force Ollama complet
@@ -504,11 +515,20 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
 
     LOG.info("ÉTAPE 1 — Collecte des avis (3 sources en parallèle)")
 
-    scrapers = {
-        "Google Play": telecharger_avis_google_play,
-        "App Store": telecharger_avis_app_store,
-        "Trustpilot": telecharger_avis_trustpilot,
-    }
+    if marque:
+        scrapers = {
+            "Google Play": partial(telecharger_avis_google_play, app_id=marque.gp_app_id),
+            "App Store": partial(telecharger_avis_app_store, app_id=marque.appstore_app_id),
+            "Trustpilot": partial(
+                telecharger_avis_trustpilot, trustpilot_url=marque.trustpilot_url
+            ),
+        }
+    else:
+        scrapers = {
+            "Google Play": telecharger_avis_google_play,
+            "App Store": telecharger_avis_app_store,
+            "Trustpilot": telecharger_avis_trustpilot,
+        }
     results: dict[str, pd.DataFrame] = {}
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
@@ -599,12 +619,17 @@ def run_pipeline(*, chemin_csv: Path, date_debut: date = DATE_DEBUT_INCLUSIVE) -
     if "Catégorie_ollama" not in out.columns:
         out["Catégorie_ollama"] = ""
 
+    # Colonne marque pour le benchmark multi-marques
+    if marque:
+        out["marque"] = marque.nom
+
     # Ordre des colonnes pour Power BI : données brutes → catégorisation → gravité
     _colonnes_ordre = [
         "date",
         "note",
         "texte",
         "source",
+        "marque",
         "longueur_texte",
         "n_caracteres",
         "Catégorie",

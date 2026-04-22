@@ -7,7 +7,7 @@ Jamais actif en CI (runners GitHub sans service Ollama).
 
 Configuration recommandée :
     ollama serve &
-    ollama pull gemma4:31b
+    ollama pull qwen3.5
     uv run python 1_pipeline.py   # Ollama détecté et utilisé automatiquement
 
 Mode par défaut : « all » — chaque avis est validé par le LLM, qu'il soit
@@ -124,7 +124,7 @@ def categoriser_texte_ollama(
         return None
 
     base = (base_url or os.getenv(_ENV_URL) or "http://127.0.0.1:11434").rstrip("/")
-    mod = model or os.getenv(_ENV_MODEL) or "gemma4:31b"
+    mod = model or os.getenv(_ENV_MODEL) or "qwen3.5"
     timeout = timeout_s if timeout_s is not None else float(os.getenv(_ENV_TIMEOUT) or "300")
 
     system = (

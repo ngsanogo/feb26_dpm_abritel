@@ -2,7 +2,7 @@
 
 Utilisé par ``scripts/ci_docker.sh --ollama``. Variables :
 ``ABRITEL_OLLAMA_URL`` (défaut http://host.docker.internal:11434),
-``ABRITEL_OLLAMA_MODEL`` (défaut gemma4:31b),
+``ABRITEL_OLLAMA_MODEL`` (défaut qwen3.5),
 ``ABRITEL_OLLAMA_TIMEOUT`` (secondes, défaut 300).
 """
 
@@ -16,7 +16,7 @@ from abritel.ollama_categorisation import categoriser_texte_ollama
 
 def main() -> int:
     url = os.environ.get("ABRITEL_OLLAMA_URL", "http://host.docker.internal:11434")
-    model = os.environ.get("ABRITEL_OLLAMA_MODEL", "gemma4:31b")
+    model = os.environ.get("ABRITEL_OLLAMA_MODEL", "qwen3.5")
     timeout = float(os.environ.get("ABRITEL_OLLAMA_TIMEOUT", "300"))
 
     texte = "Frais cachés et remboursement refusé pour ma réservation Abritel."

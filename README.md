@@ -88,7 +88,7 @@ Toutes les colonnes sont **toujours presentes** dans le CSV (schema fixe pour Po
 Le pipeline utilise **deux methodes complementaires** pour categoriser chaque avis :
 
 1. **Mots-cles** (deterministe, rapide) : ~300 mots-cles FR/EN mappes aux 8 categories. Resultat dans `Catégorie_mots_cles`.
-2. **LLM local** (Ollama gemma4:31b, temperature 0) : valide et corrige la categorie pour chaque avis. Resultat dans `Catégorie_ollama`.
+2. **LLM local** (Ollama qwen3.5, temperature 0) : valide et corrige la categorie pour chaque avis. Resultat dans `Catégorie_ollama`.
 
 La colonne `Catégorie` contient le **resultat final** : Ollama si disponible, mots-cles sinon. Cela permet de comparer les deux methodes et de mesurer le taux de reclassification.
 
@@ -96,7 +96,7 @@ La colonne `Catégorie` contient le **resultat final** : Ollama si disponible, m
 
 ```bash
 ollama serve &
-ollama pull gemma4:31b
+ollama pull qwen3.5
 ABRITEL_OLLAMA_TIMEOUT=300 uv run python 1_pipeline.py
 ```
 
@@ -107,6 +107,6 @@ ABRITEL_OLLAMA_TIMEOUT=300 uv run python 1_pipeline.py
 | Variable | Defaut | Description |
 |---|---|---|
 | `ABRITEL_OLLAMA` | auto | `0` pour forcer la desactivation |
-| `ABRITEL_OLLAMA_MODEL` | `gemma4:31b` | Modele Ollama |
+| `ABRITEL_OLLAMA_MODEL` | `qwen3.5` | Modele Ollama |
 | `ABRITEL_OLLAMA_MODE` | `all` | `all` = tous les avis, `autre` = seulement les « Autre » |
 | `ABRITEL_OLLAMA_TIMEOUT` | `300` | Timeout par requete (secondes) |

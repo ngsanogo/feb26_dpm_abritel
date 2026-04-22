@@ -7,7 +7,7 @@
 #   ./scripts/ci_docker.sh --ollama   # après ruff/pytest, teste Ollama sur le Mac via host.docker.internal
 #
 # Avec --ollama : Ollama doit tourner sur la machine hôte (ollama serve). Optionnel :
-#   ABRITEL_OLLAMA_MODEL=gemma4:31b ./scripts/ci_docker.sh --ollama
+#   ABRITEL_OLLAMA_MODEL=qwen3.5 ./scripts/ci_docker.sh --ollama
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -36,7 +36,7 @@ if [[ "$WITH_OLLAMA" -eq 1 ]]; then
     exit 1
   fi
   DOCKER_ARGS+=(-e "ABRITEL_OLLAMA_URL=http://host.docker.internal:11434")
-  DOCKER_ARGS+=(-e "ABRITEL_OLLAMA_MODEL=${ABRITEL_OLLAMA_MODEL:-gemma4:31b}")
+  DOCKER_ARGS+=(-e "ABRITEL_OLLAMA_MODEL=${ABRITEL_OLLAMA_MODEL:-qwen3.5}")
   DOCKER_ARGS+=(-e "ABRITEL_OLLAMA_TIMEOUT=${ABRITEL_OLLAMA_TIMEOUT:-300}")
 fi
 

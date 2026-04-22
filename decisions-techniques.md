@@ -7,7 +7,7 @@
 
 ## Résumé
 
-Notre pipeline collecte les avis utilisateurs Abritel depuis 3 sources (Google Play, App Store, Trustpilot) à partir d'une **date fixe au 01/01/2025** pour garantir la reproductibilité de nos analyses. Le scraping est **incrémental** avec une marge de 7 jours pour ne pas manquer d'avis publiés en retard, et nous scrapons les 3 sources en parallèle pour réduire le temps d'exécution. Nous catégorisons chaque avis par un système à deux niveaux : d'abord par **mots-clés** (~300 mots FR/EN, normalisés sans accents via NFD) dans 7 catégories + « Autre », puis nous le validons par un **LLM local** (Ollama gemma4:31b, temperature 0) qui corrige les erreurs de classification. Nous avons choisi un LLM local pour des raisons de confidentialité (RGPD) et nous utilisons un cache incrémental avec sauvegarde progressive tous les 25 avis pour éviter la perte de travail en cas d'interruption. Nous évaluons la gravité selon deux axes indépendants : l'un combine note + catégorie + mots-clés forts (3 niveaux), l'autre analyse uniquement le texte pour casser la tautologie note→gravité. Nous décomposons les avis « Autre » en 4 sous-catégories (positif court, positif thématique, négatif non catégorisé, neutre) pour distinguer le bruit du signal. Un **circuit breaker** nous protège contre la perte de données si une source cesse de répondre. Nous exportons le CSV de manière atomique (écriture temp + rename) en UTF-8-SIG pour la compatibilité Power BI, et nous rattachons chaque avis à la version de l'app active à sa date de publication. Le pipeline tourne quotidiennement via GitHub Actions, avec détection automatique de spikes par catégorie et traçabilité des changements de mots-clés via hash MD5.
+Notre pipeline collecte les avis utilisateurs Abritel depuis 3 sources (Google Play, App Store, Trustpilot) à partir d'une **date fixe au 01/01/2025** pour garantir la reproductibilité de nos analyses. Le scraping est **incrémental** avec une marge de 7 jours pour ne pas manquer d'avis publiés en retard, et nous scrapons les 3 sources en parallèle pour réduire le temps d'exécution. Nous catégorisons chaque avis par un système à deux niveaux : d'abord par **mots-clés** (~300 mots FR/EN, normalisés sans accents via NFD) dans 7 catégories + « Autre », puis nous le validons par un **LLM local** (Ollama qwen3.5, temperature 0) qui corrige les erreurs de classification. Nous avons choisi un LLM local pour des raisons de confidentialité (RGPD) et nous utilisons un cache incrémental avec sauvegarde progressive tous les 25 avis pour éviter la perte de travail en cas d'interruption. Nous évaluons la gravité selon deux axes indépendants : l'un combine note + catégorie + mots-clés forts (3 niveaux), l'autre analyse uniquement le texte pour casser la tautologie note→gravité. Nous décomposons les avis « Autre » en 4 sous-catégories (positif court, positif thématique, négatif non catégorisé, neutre) pour distinguer le bruit du signal. Un **circuit breaker** nous protège contre la perte de données si une source cesse de répondre. Nous exportons le CSV de manière atomique (écriture temp + rename) en UTF-8-SIG pour la compatibilité Power BI, et nous rattachons chaque avis à la version de l'app active à sa date de publication. Le pipeline tourne quotidiennement via GitHub Actions, avec détection automatique de spikes par catégorie et traçabilité des changements de mots-clés via hash MD5.
 
 ---
 
@@ -92,7 +92,7 @@ Nous avons ajouté une validation LLM parce que les mots-clés sont efficaces su
 
 Nous avons choisi un LLM local parce que les avis contiennent des données potentiellement sensibles (montants, noms de propriétaires). Les envoyer à une API tierce créerait un risque RGPD. En plus, le coût est fixe (pas de facturation à l'appel) et le modèle ne change pas entre deux runs sans action explicite, ce qui garantit la reproductibilité.
 
-### Pourquoi gemma4:31b
+### Pourquoi qwen3.5
 
 Nous avons choisi ce modèle parce que ses 31 milliards de paramètres sont suffisants pour de la classification de texte court, avec une qualité supérieure aux modèles 7-8B sur les cas ambigus. Gemma 4 (Google) est particulièrement bon en classification structurée avec sortie JSON et tourne en local sur un Mac M-series avec 64 GB de RAM.
 
@@ -222,7 +222,7 @@ Nous avons séparé le code en 4 fichiers (`scraping.py`, `categorisation.py`, `
 | Retries Ollama | 3 | Résilience sans multiplier le temps |
 | Temperature | 0 | Déterminisme pour reproductibilité |
 | Think | False | 18x plus rapide, même qualité de classification |
-| Timeout Ollama | 300s | Suffisant pour gemma4:31b en local |
+| Timeout Ollama | 300s | Suffisant pour qwen3.5 en local |
 | Troncature prompt | 6000 chars | Sous les limites de contexte Gemma4 |
 | Checkpoint | 25 avis | Compromis sécurité / charge I/O |
 | Seuil positif court | ≤ 15 mots, note ≥ 4 | 1 phrase courte = non actionnable |
@@ -231,3 +231,16 @@ Nous avons séparé le code en 4 fichiers (`scraping.py`, `categorisation.py`, `
 | Spike baseline | 4 semaines | Historique suffisant |
 | Hash keywords | MD5 8 chars | Traçabilité légère |
 | Délai de grâce version | 2 jours | Temps de déploiement stores |
+| Gap benchmark | ≥ 3× | Seuil pour "faiblesse unique" vs concurrent |
+
+---
+
+## 23. Benchmark multi-marques (Abritel, Airbnb, Booking)
+
+Nous avons ajouté un mode benchmark qui exécute le même pipeline (scraping + catégorisation + gravité) pour Airbnb et Booking.com en plus d'Abritel parce que nous avions besoin de contextualiser les taux de problèmes : un taux de 14% de plaintes Financier est-il élevé ou normal pour le secteur ? Sans benchmark, impossible de répondre.
+
+Nous avons choisi de paramétrer les scrapers existants (`app_id`, `trustpilot_url`) plutôt que de dupliquer le code parce que la logique de scraping est identique — seuls les identifiants changent. Chaque marque a son propre sous-dossier (`data/benchmark/{marque}/`) avec CSV et métadonnées indépendants, ce qui permet le cache incrémental et l'Ollama progressif par marque. Un CSV combiné (`benchmark_complet.csv`) avec colonne `marque` est généré pour la comparaison Power BI / notebook.
+
+La catégorisation par mots-clés est identique pour les 3 marques. Nous reconnaissons que nos mots-clés sont optimisés sur le vocabulaire Abritel, ce qui peut sous-estimer les taux de problèmes chez Airbnb et Booking (biais conservateur : si Abritel est pire MALGRÉ ce biais, le constat est d'autant plus robuste).
+
+Le seuil de 3× pour qualifier une "faiblesse unique" est un choix pragmatique : en dessous, l'écart peut être un artefact du biais de mots-clés ; au-dessus, il est statistiquement et pratiquement significatif.
