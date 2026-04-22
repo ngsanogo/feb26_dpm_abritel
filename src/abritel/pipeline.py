@@ -569,16 +569,18 @@ def run_pipeline(
             a_maintenant = len(df_src) > 0
             if avait_dans_fenetre and not a_maintenant:
                 sources_circuit_breaker.append(nom)
-                LOG.warning(
-                    "   ⚠ CIRCUIT BREAKER : %s a retourné 0 avis sur la fenêtre %s → %s "
-                    "alors qu'elle en avait — API potentiellement cassée.",
+                LOG.error(
+                    "   CIRCUIT BREAKER : %s a retourné 0 avis sur la fenêtre %s → %s "
+                    "alors qu'elle en avait — API potentiellement cassée. "
+                    "Vérifier manuellement avant d'exploiter les résultats.",
                     nom,
                     date_debut,
                     fin,
                 )
         if sources_circuit_breaker:
-            LOG.warning(
-                "   Diagnostic circuit breaker — source(s) à 0 avis ce run : %s",
+            LOG.error(
+                "   CIRCUIT BREAKER DÉCLENCHÉ — source(s) suspecte(s) : %s. "
+                "Les données de ce run sont potentiellement incomplètes.",
                 ", ".join(sources_circuit_breaker),
             )
     breaker_triggered = bool(sources_circuit_breaker)

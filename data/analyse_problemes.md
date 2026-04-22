@@ -57,6 +57,7 @@ Accord **substantiel** (κ > 0.6) sur les 3 corpus — méthode reproductible et
 - **Biais Trustpilot** : auto-sélection de plaignants, les taux de négatifs par source ne reflètent pas le sentiment réel.
 - **Mots-clés** : optimisés sur le vocabulaire Abritel, potentiel sous-comptage pour les concurrents (biais conservateur : si Abritel est pire malgré ce biais, le constat est d'autant plus robuste).
 - **Tests statistiques** : les gaps sont validés par test exact de Fisher avec correction de Bonferroni. Seuls les gaps marqués « significatif » sont exploitables pour des décisions stratégiques.
+- **Gravité_texte** : mesure la véhémence textuelle (vocabulaire fort, ponctuation exclamative), pas l'impact réel sur l'utilisateur. Un avis poli peut masquer un problème critique.
 
 ---
 
@@ -217,15 +218,34 @@ Causes (négatifs Booking avril 2026, hors Autre) :
 
 ## Matrice de priorisation
 
-| Problème | Gap | Sig. | Impact | Quick win | Horizon | Action |
-|----------|-----|------|--------|-----------|---------|--------|
-| Localisation / Langue | 53.0× | ✓ | 10.6% | ✓ | Sprint Q2 | Audit i18n (devise, langue, géolocalisation NZ/$), détection auto locale |
-| Annulation / Réservation | 4.7× | ✓ | 12.3% | — | Roadmap Q3 | Synchro calendrier multi-plateforme, protocole relogement J-0 |
-| UX / Ergonomie | 3.5× | ✓ | 8.7% | ✓ | Sprint Q2 | Deep linking sans téléchargement forcé, persistance filtres, refonte nav |
-| Qualité du bien | 2.9× | ✓ | 7.8% | — | Roadmap Q4 | Vérification photo, score fraîcheur annonces, checklist propriétaire |
-| Bug Technique | 2.9× | ✓ | 10.3% | ✓ | Sprint Q2 | Sprint stabilité login/auth, monitoring crash rate + latence |
-| Financier | 2.1× | ✓ | 14.1% | — | Roadmap Q3 | SLA remboursement 7j garanti, prix final affiché avant paiement |
-| Service Client | 2.0× | ✓ | 10.4% | — | Roadmap Q3-Q4 | Routage francophone prioritaire, escalade humaine < 5 min |
+| Problème | Gap | Sig. | Impact [IC 95%] | Quick win | Horizon | Action |
+|----------|-----|------|-----------------|-----------|---------|--------|
+| Localisation / Langue | 53.0× | ✓ | 10.6% [8.6, 13.0] | ✓ | Sprint Q2 | Audit i18n (devise, langue, géolocalisation NZ/$), détection auto locale |
+| Annulation / Réservation | 4.7× | ✓ | 12.3% [10.2, 14.9] | — | Roadmap Q3 | Synchro calendrier multi-plateforme, protocole relogement J-0 |
+| UX / Ergonomie | 3.5× | ✓ | 8.7% [6.9, 10.9] | ✓ | Sprint Q2 | Deep linking sans téléchargement forcé, persistance filtres, refonte nav |
+| Qualité du bien | 2.9× | ✓ | 7.8% [6.1, 9.9] | — | Roadmap Q4 | Vérification photo, score fraîcheur annonces, checklist propriétaire |
+| Bug Technique | 2.9× | ✓ | 10.3% [8.3, 12.7] | ✓ | Sprint Q2 | Sprint stabilité login/auth, monitoring crash rate + latence |
+| Financier | 2.1× | ✓ | 14.1% [11.7, 16.7] | — | Roadmap Q3 | SLA remboursement 7j garanti, prix final affiché avant paiement |
+| Service Client | 2.0× | ✓ | 10.4% [8.4, 12.8] | — | Roadmap Q3-Q4 | Routage francophone prioritaire, escalade humaine < 5 min |
+
+---
+
+## Co-occurrences de catégories (Abritel)
+
+Avis touchant simultanément deux problèmes (catégorie primaire × secondaire).
+
+| Primaire | Secondaire | N avis |
+|----------|-----------|--------|
+| Financier | Qualité du bien | 36 |
+| Annulation / Réservation | Financier | 31 |
+| Annulation / Réservation | Qualité du bien | 28 |
+| Localisation / Langue | Financier | 22 |
+| Service Client | Financier | 18 |
+| Service Client | Qualité du bien | 16 |
+| Financier | Service Client | 16 |
+| Qualité du bien | Service Client | 15 |
+| Annulation / Réservation | Service Client | 14 |
+| Bug Technique | Qualité du bien | 14 |
 
 ---
 

@@ -159,10 +159,25 @@ def compute_gaps(df: pd.DataFrame) -> list[dict]:
         else:
             p_value = 1.0
 
+        # IC Wilson 95% sur le taux Abritel
+        z = 1.96
+        if t_a > 0:
+            p_hat = n_a / t_a
+            denom = 1 + z**2 / t_a
+            center = (p_hat + z**2 / (2 * t_a)) / denom
+            margin = z * np.sqrt(p_hat * (1 - p_hat) / t_a + z**2 / (4 * t_a**2)) / denom
+            ci_low_pct = round(max(0, center - margin) * 100, 1)
+            ci_high_pct = round(min(1, center + margin) * 100, 1)
+        else:
+            ci_low_pct = 0.0
+            ci_high_pct = 0.0
+
         gaps.append(
             {
                 "categorie": cat,
                 "abritel_pct": rates.get("Abritel", 0),
+                "ci_low_pct": ci_low_pct,
+                "ci_high_pct": ci_high_pct,
                 "best_comp_pct": best_comp_rate,
                 "best_comp_name": best_comp_name,
                 "ratio": ratio,
@@ -207,6 +222,26 @@ def compute_booking_decline(df: pd.DataFrame) -> dict:
     top_cats = apr_neg["Catégorie"].value_counts().head(3).to_dict()
 
     return {"months": months, "top_cats_april": {str(k): int(v) for k, v in top_cats.items()}}
+
+
+def compute_cross_categories(df: pd.DataFrame, marque: str = "Abritel") -> list[dict]:
+    """Cross-tabulation catégorie primaire x secondaire (co-occurrences)."""
+    sub = df[
+        (df["marque"] == marque)
+        & df["Catégorie_secondaire"].notna()
+        & (df["Catégorie_secondaire"].astype(str).str.strip() != "")
+        & (df["Catégorie_secondaire"] != df["Catégorie"])
+    ]
+    if sub.empty:
+        return []
+    pairs = (
+        sub.groupby(["Catégorie", "Catégorie_secondaire"])
+        .size()
+        .reset_index(name="n")
+        .sort_values("n", ascending=False)
+        .head(10)
+    )
+    return pairs.to_dict("records")
 
 
 # ── Ollama ──────────────────────────────────────────────────────────────
@@ -330,6 +365,7 @@ def generate_report(
     gaps: list[dict],
     bk_decline: dict,
     quali: dict[str, dict | None] | None = None,
+    cross_categories: list[dict] | None = None,
 ) -> str:
     total = len(df)
     dates = df["date"].dropna()
@@ -512,6 +548,9 @@ def generate_report(
             "- **Tests statistiques** : les gaps sont validés par test exact de Fisher "
             "avec correction de Bonferroni. Seuls les gaps marqués « significatif » "
             "sont exploitables pour des décisions stratégiques.",
+            "- **Gravité_texte** : mesure la véhémence textuelle (vocabulaire fort, "
+            "ponctuation exclamative), pas l'impact réel sur l'utilisateur. "
+            "Un avis poli peut masquer un problème critique.",
             "",
             "---",
             "",
@@ -657,8 +696,8 @@ def generate_report(
         [
             "## Matrice de priorisation",
             "",
-            "| Problème | Gap | Sig. | Impact | Quick win | Horizon | Action |",
-            "|----------|-----|------|--------|-----------|---------|--------|",
+            "| Problème | Gap | Sig. | Impact [IC 95%] | Quick win | Horizon | Action |",
+            "|----------|-----|------|-----------------|-----------|---------|--------|",
         ]
     )
     for g in sorted(gaps, key=lambda x: -x["ratio"]):
@@ -669,10 +708,27 @@ def generate_report(
         qw = "✓" if rec["quick_win"] else "—"
         sig = "✓" if g.get("significant") else "—"
         lines.append(
-            f"| {cat} | {g['ratio']}× | {sig} | {g['abritel_pct']}% "
+            f"| {cat} | {g['ratio']}× | {sig} "
+            f"| {g['abritel_pct']}% [{g['ci_low_pct']}, {g['ci_high_pct']}] "
             f"| {qw} | {rec['horizon']} | {rec['action']} |"
         )
     lines.extend(["", "---", ""])
+
+    # ── Cross-categories ──
+    if cross_categories:
+        lines.extend(
+            [
+                "## Co-occurrences de catégories (Abritel)",
+                "",
+                "Avis touchant simultanément deux problèmes (catégorie primaire × secondaire).",
+                "",
+                "| Primaire | Secondaire | N avis |",
+                "|----------|-----------|--------|",
+            ]
+        )
+        for row in cross_categories:
+            lines.append(f"| {row['Catégorie']} | {row['Catégorie_secondaire']} | {row['n']} |")
+        lines.extend(["", "---", ""])
 
     # ── Next steps ──
     lines.extend(
@@ -755,8 +811,14 @@ def main():
     else:
         LOG.info("\n⚠ Ollama non disponible — rapport quantitatif uniquement")
 
+    cross_cats = compute_cross_categories(df)
+    if cross_cats:
+        LOG.info("\n═══ CO-OCCURRENCES CATÉGORIES ═══")
+        for row in cross_cats[:5]:
+            LOG.info("  %s + %s : %d avis", row["Catégorie"], row["Catégorie_secondaire"], row["n"])
+
     LOG.info("\n═══ GÉNÉRATION DU RAPPORT ═══")
-    report = generate_report(df, positioning, kappas, gaps, bk_decline, quali)
+    report = generate_report(df, positioning, kappas, gaps, bk_decline, quali, cross_cats)
     OUTPUT_PATH.write_text(report, encoding="utf-8")
     LOG.info("Rapport écrit dans %s (%d lignes)", OUTPUT_PATH, report.count("\n"))
 

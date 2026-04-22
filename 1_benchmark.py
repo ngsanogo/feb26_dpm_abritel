@@ -29,12 +29,15 @@ def main() -> None:
         print(f"{'=' * 60}\n")
 
         chemin = benchmark_dir / key / "avis_enrichis.csv"
-        df = run_pipeline(
-            chemin_csv=chemin,
-            date_debut=DATE_DEBUT_INCLUSIVE,
-            marque=marque,
-        )
-        frames.append(df)
+        try:
+            df = run_pipeline(
+                chemin_csv=chemin,
+                date_debut=DATE_DEBUT_INCLUSIVE,
+                marque=marque,
+            )
+            frames.append(df)
+        except Exception:
+            logging.exception("  Échec pipeline pour %s — marque ignorée", marque.nom)
 
     # CSV combiné pour comparaison
     if frames:

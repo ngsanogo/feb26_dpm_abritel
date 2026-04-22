@@ -151,7 +151,11 @@ def categoriser_texte_ollama(
         "• Choisis le problème PRINCIPAL si l'avis touche plusieurs thèmes\n"
         "• « Autre » = dernier recours quand aucune catégorie ne colle\n"
         "• Utilise le libellé EXACT de la liste ci-dessus (accents inclus)\n"
-        "• Ne jamais inventer de catégorie"
+        "• Ne jamais inventer de catégorie\n\n"
+        "Exemples :\n"
+        '• "L\'appli bug constamment, impossible de se connecter" → Bug Technique\n'
+        '• "Tout est en dollars au lieu d\'euros" → Localisation / Langue\n'
+        '• "Super appli, fonctionne très bien" → Autre'
     )
 
     max_chars = 6000
