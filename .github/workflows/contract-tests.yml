@@ -1,0 +1,27 @@
+name: api-contract-tests
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"  # Every Monday at 8am UTC
+  workflow_dispatch:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Run contract tests
+        run: uv run pytest -m slow -v --override-ini addopts=

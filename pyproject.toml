@@ -1,0 +1,52 @@
+[project]
+name = "feb26_dpm_abritel"
+version = "0.1.0"
+description = "Scraping avis Google Play Abritel, analyse Jupyter, export CSV pour Power BI"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.2,<3",
+    "numpy>=2.0,<3",
+    "matplotlib>=3.9,<4",
+    "seaborn>=0.13,<1",
+    "ipykernel>=6.29,<7",
+    "google-play-scraper>=1.2.7,<2",
+    "requests>=2.31,<3",
+    "beautifulsoup4>=4.12,<5",
+    "scipy>=1.12,<2",
+    "scikit-posthocs>=0.9,<1",
+    "simplemma>=1.0,<2",
+    "playwright>=1.58.0,<2",
+    "wordcloud>=1.9,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "responses>=0.25",
+    "ruff>=0.6",
+    "pre-commit>=4.0",
+    "nbclient>=0.10.4",
+    "nbconvert>=7.17.1",
+]
+
+[tool.uv]
+# Installé en mode editable pour que `from abritel.x import y` fonctionne.
+package = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m \"not slow\""
+markers = [
+    "slow: tests requiring real network access (deselect with '-m \"not slow\"')",
+]

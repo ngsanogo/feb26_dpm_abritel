@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+.venv-*/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Bureautique (fichiers de verrouillage)
+.~lock*
+**/.~lock*
+
+# Local tooling / secrets
+.claude/
+.env
+.env.*
+
+# Linting cache
+.ruff_cache/
+
+# Généré par le pipeline / notebook (régénérable — non versionnés sur la branche publique)
+data/avis_enrichis.csv
+data/releases.csv
+data/analyse_problemes.md
+data/pipeline_meta.json
+data/benchmark/**/*.csv
+data/benchmark/**/pipeline_meta.json
+data/figures/*.png
+data/crosstab_*.csv
+data/synthese_*.csv
+data/priorisation_*.csv
+
+# Export HTML du notebook (généré, ~3 MB)
+2_analyse.html
+
+# Binaires bureautiques
+*.pbix
+
+# OS/editor
+.DS_Store
+.vscode/
+*.swp
