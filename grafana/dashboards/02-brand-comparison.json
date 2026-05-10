@@ -1,0 +1,223 @@
+{
+  "annotations": {"list": []},
+  "description": "Benchmark Abritel ↔ Airbnb ↔ Booking : note moyenne, volume, distribution catégories, persona, source.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "barchart",
+      "id": 1,
+      "title": "Note moyenne par marque",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "options": {
+        "orientation": "vertical",
+        "showValue": "always",
+        "stacking": "none",
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false},
+        "tooltip": {"mode": "single"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 2.5},
+              {"color": "yellow", "value": 3.5},
+              {"color": "green", "value": 4}
+            ]
+          },
+          "custom": {"lineWidth": 1, "fillOpacity": 80, "axisPlacement": "auto"},
+          "unit": "short",
+          "decimals": 2,
+          "max": 5,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "SELECT b.label AS marque, AVG(r.rating)::numeric(10,2) AS note FROM marts.fact_reviews r JOIN marts.dim_brand b ON b.id=r.brand_id WHERE r.is_exploitable=TRUE GROUP BY b.label ORDER BY note DESC;"
+      }]
+    },
+    {
+      "type": "barchart",
+      "id": 2,
+      "title": "Volume d'avis par marque",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "options": {
+        "orientation": "vertical",
+        "showValue": "always",
+        "stacking": "normal",
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1, "fillOpacity": 80, "axisPlacement": "auto"},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "WITH src_brand AS (SELECT b.label AS marque, src.label AS source, COUNT(*) AS n FROM marts.fact_reviews r JOIN marts.dim_brand b ON b.id=r.brand_id JOIN marts.dim_source src ON src.id=r.source_id WHERE r.is_exploitable=TRUE GROUP BY 1,2) SELECT marque, MAX(CASE WHEN source='Trustpilot' THEN n ELSE 0 END) AS \"Trustpilot\", MAX(CASE WHEN source='Google Play' THEN n ELSE 0 END) AS \"Google Play\", MAX(CASE WHEN source='App Store' THEN n ELSE 0 END) AS \"App Store\" FROM src_brand GROUP BY marque ORDER BY marque;"
+      }]
+    },
+    {
+      "type": "stat",
+      "id": 3,
+      "title": "% gravité haute par marque",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "vertical"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.2},
+              {"color": "orange", "value": 0.35},
+              {"color": "red", "value": 0.5}
+            ]
+          },
+          "unit": "percentunit",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "WITH per_brand AS (SELECT b.label AS marque, SUM(CASE WHEN sev.code='high' THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*),0) AS pct_high FROM marts.fact_reviews r JOIN marts.fact_classifications fc ON fc.review_id=r.id JOIN marts.dim_severity sev ON sev.id=fc.severity_id JOIN marts.dim_brand b ON b.id=r.brand_id WHERE r.is_exploitable=TRUE GROUP BY 1) SELECT marque, pct_high FROM per_brand ORDER BY marque;"
+      }]
+    },
+    {
+      "type": "barchart",
+      "id": 4,
+      "title": "Catégories par marque (volume)",
+      "description": "Stacked bar : pour chaque marque, répartition des avis par catégorie.",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 10, "w": 16, "x": 0, "y": 8},
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "normal",
+        "legend": {"displayMode": "list", "placement": "right", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1, "fillOpacity": 80, "axisPlacement": "auto"},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "WITH cb AS (SELECT b.label AS marque, c.label AS category, COUNT(*) AS n FROM marts.fact_reviews r JOIN marts.fact_classifications fc ON fc.review_id=r.id JOIN marts.dim_brand b ON b.id=r.brand_id JOIN marts.dim_category c ON c.id=fc.category_id WHERE r.is_exploitable=TRUE GROUP BY 1,2), pivoted AS (SELECT marque FROM cb GROUP BY 1) SELECT p.marque, COALESCE(MAX(CASE WHEN cb.category='Localisation / Langue' THEN cb.n END),0) AS \"Localisation / Langue\", COALESCE(MAX(CASE WHEN cb.category='Transparence financière' THEN cb.n END),0) AS \"Transparence financière\", COALESCE(MAX(CASE WHEN cb.category='Fiabilité réservations' THEN cb.n END),0) AS \"Fiabilité réservations\", COALESCE(MAX(CASE WHEN cb.category='Service client' THEN cb.n END),0) AS \"Service client\", COALESCE(MAX(CASE WHEN cb.category='Qualité des annonces' THEN cb.n END),0) AS \"Qualité des annonces\", COALESCE(MAX(CASE WHEN cb.category='Parcours paiement' THEN cb.n END),0) AS \"Parcours paiement\", COALESCE(MAX(CASE WHEN cb.category='Communication hôte' THEN cb.n END),0) AS \"Communication hôte\", COALESCE(MAX(CASE WHEN cb.category='Non classé' THEN cb.n END),0) AS \"Non classé\" FROM pivoted p LEFT JOIN cb ON cb.marque=p.marque GROUP BY p.marque ORDER BY p.marque;"
+      }]
+    },
+    {
+      "type": "barchart",
+      "id": 5,
+      "title": "Personas par marque",
+      "description": "Locataire vs propriétaire — répartition des avis exploitables par marque.",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 10, "w": 8, "x": 16, "y": 8},
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "percent",
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "multi"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1, "fillOpacity": 80, "axisPlacement": "auto"},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "WITH bp AS (SELECT b.label AS marque, p.label AS persona, COUNT(*) AS n FROM marts.fact_reviews r JOIN marts.dim_brand b ON b.id=r.brand_id JOIN marts.dim_persona p ON p.id=r.persona_id WHERE r.is_exploitable=TRUE GROUP BY 1,2) SELECT marque, MAX(CASE WHEN persona='Locataire' THEN n ELSE 0 END) AS \"Locataire\", MAX(CASE WHEN persona='Propriétaire' THEN n ELSE 0 END) AS \"Propriétaire\", MAX(CASE WHEN persona='Indéterminé' THEN n ELSE 0 END) AS \"Indéterminé\" FROM bp GROUP BY marque ORDER BY marque;"
+      }]
+    },
+    {
+      "type": "timeseries",
+      "id": 6,
+      "title": "Note moyenne par marque (rolling 7j)",
+      "description": "Lissage sur 7 jours pour éviter le bruit des petits volumes journaliers.",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 18},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "auto",
+            "pointSize": 5,
+            "stacking": {"mode": "none"},
+            "axisPlacement": "auto"
+          },
+          "color": {"mode": "palette-classic"},
+          "unit": "short",
+          "decimals": 2,
+          "max": 5,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "time_series",
+        "rawSql": "WITH daily AS (SELECT date_trunc('day', r.review_date)::date AS d, b.label AS brand_label, AVG(r.rating)::float AS avg_rating FROM marts.fact_reviews r JOIN marts.dim_brand b ON b.id=r.brand_id WHERE r.is_exploitable=TRUE AND $__timeFilter(r.review_date) GROUP BY 1, 2) SELECT d::timestamptz AS time, brand_label AS metric, AVG(avg_rating) OVER (PARTITION BY brand_label ORDER BY d ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)::numeric(10,2) AS value FROM daily ORDER BY 1, 2;"
+      }]
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["voc", "benchmark"],
+  "templating": {"list": []},
+  "time": {"from": "now-90d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "VoC — Brand Comparison",
+  "uid": "voc-brand-compare",
+  "version": 1,
+  "weekStart": ""
+}

@@ -1,0 +1,286 @@
+{
+  "annotations": {"list": []},
+  "description": "Opérations / SAV : tickets ouverts, routing par équipe owner, sources, top tickets en attente.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "stat",
+      "id": 1,
+      "title": "Tickets ouverts",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 4, "w": 5, "x": 0, "y": 0},
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 30},
+              {"color": "red", "value": 80}
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "SELECT COUNT(*) AS \"value\" FROM marts.fact_tickets;"
+      }]
+    },
+    {
+      "type": "stat",
+      "id": 2,
+      "title": "Avg. âge ticket (jours)",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 4, "w": 5, "x": 5, "y": 0},
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 5},
+              {"color": "orange", "value": 14},
+              {"color": "red", "value": 30}
+            ]
+          },
+          "unit": "short",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "SELECT AVG(EXTRACT(EPOCH FROM (current_timestamp - t.created_at))/86400)::numeric(10,1) AS \"value\" FROM marts.fact_tickets t;"
+      }]
+    },
+    {
+      "type": "stat",
+      "id": 3,
+      "title": "% avis avec réponse hôte",
+      "description": "Sur les avis exploitables.",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 4, "w": 5, "x": 10, "y": 0},
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 0.1},
+              {"color": "yellow", "value": 0.3},
+              {"color": "green", "value": 0.5}
+            ]
+          },
+          "unit": "percentunit",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "SELECT SUM(CASE WHEN vendor_responded THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*),0) AS \"value\" FROM marts.fact_reviews WHERE is_exploitable=TRUE;"
+      }]
+    },
+    {
+      "type": "stat",
+      "id": 4,
+      "title": "Délai moyen réponse (jours)",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 4, "w": 5, "x": 15, "y": 0},
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 2},
+              {"color": "orange", "value": 5},
+              {"color": "red", "value": 14}
+            ]
+          },
+          "unit": "short",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "SELECT AVG(response_latency_days)::numeric(10,1) AS \"value\" FROM marts.fact_reviews WHERE is_exploitable=TRUE AND response_latency_days IS NOT NULL;"
+      }]
+    },
+    {
+      "type": "barchart",
+      "id": 5,
+      "title": "Tickets par équipe owner",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false},
+        "tooltip": {"mode": "single"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "blue", "value": null}]
+          },
+          "custom": {"lineWidth": 1, "fillOpacity": 80, "axisPlacement": "auto"},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "WITH t AS (SELECT CASE c.code WHEN 'transparence_financiere' THEN 'finance' WHEN 'parcours_paiement' THEN 'finance' WHEN 'service_client' THEN 'sav' WHEN 'fiabilite_reservations' THEN 'sav' WHEN 'app_fr' THEN 'produit' WHEN 'qualite_annonces' THEN 'trust_safety' WHEN 'communication_hote' THEN 'sav' ELSE 'sav' END AS owner_team FROM marts.fact_tickets ft JOIN marts.fact_classifications fc ON fc.review_id=ft.review_id JOIN marts.dim_category c ON c.id=fc.category_id) SELECT owner_team AS équipe, COUNT(*) AS tickets FROM t GROUP BY 1 ORDER BY 2 DESC;"
+      }]
+    },
+    {
+      "type": "barchart",
+      "id": 6,
+      "title": "Tickets par marque × source",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "normal",
+        "legend": {"displayMode": "list", "placement": "right", "showLegend": true},
+        "tooltip": {"mode": "multi"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1, "fillOpacity": 80, "axisPlacement": "auto"},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "WITH bs AS (SELECT b.label AS marque, src.label AS source, COUNT(*) AS n FROM marts.fact_tickets t JOIN marts.fact_reviews r ON r.id=t.review_id JOIN marts.dim_brand b ON b.id=r.brand_id JOIN marts.dim_source src ON src.id=r.source_id GROUP BY 1,2) SELECT marque, MAX(CASE WHEN source='Trustpilot' THEN n ELSE 0 END) AS \"Trustpilot\", MAX(CASE WHEN source='Google Play' THEN n ELSE 0 END) AS \"Google Play\", MAX(CASE WHEN source='App Store' THEN n ELSE 0 END) AS \"App Store\" FROM bs GROUP BY marque ORDER BY marque;"
+      }]
+    },
+    {
+      "type": "timeseries",
+      "id": 7,
+      "title": "Tickets ouverts par jour",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "stacking": {"mode": "none"},
+            "axisPlacement": "auto"
+          },
+          "color": {"mode": "fixed", "fixedColor": "red"},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false},
+        "tooltip": {"mode": "single"}
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "time_series",
+        "rawSql": "SELECT date_trunc('day', t.created_at)::timestamptz AS time, COUNT(*) AS \"tickets ouverts\" FROM marts.fact_tickets t WHERE $__timeFilter(t.created_at) GROUP BY 1 ORDER BY 1;"
+      }]
+    },
+    {
+      "type": "table",
+      "id": 8,
+      "title": "Top 30 tickets — backlog (du plus ancien au plus récent)",
+      "description": "Routage owner_team calculé inline pour reproduire la logique de ticketing.py.",
+      "datasource": {"type": "postgres", "uid": "voc-postgres"},
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 20},
+      "options": {
+        "showHeader": true,
+        "footer": {"show": false}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "auto", "displayMode": "auto", "filterable": true},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "rating"}, "properties": [{"id": "custom.width", "value": 60}, {"id": "custom.cellOptions", "value": {"type": "color-background"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 2}, {"color": "yellow", "value": 3}, {"color": "green", "value": 4}]}}]},
+          {"matcher": {"id": "byName", "options": "âge_jours"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 5}, {"color": "orange", "value": 14}, {"color": "red", "value": 30}]}}, {"id": "custom.width", "value": 90}]},
+          {"matcher": {"id": "byName", "options": "extrait"}, "properties": [{"id": "custom.width", "value": 380}]},
+          {"matcher": {"id": "byName", "options": "owner"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}}, {"id": "mappings", "value": [{"type": "value", "options": {"finance": {"color": "purple"}, "sav": {"color": "blue"}, "produit": {"color": "green"}, "trust_safety": {"color": "orange"}}}]}]}
+        ]
+      },
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "postgres", "uid": "voc-postgres"},
+        "format": "table",
+        "rawSql": "SELECT t.created_at AS date_avis, ROUND(EXTRACT(EPOCH FROM (current_timestamp - t.created_at))/86400, 1) AS \"âge_jours\", b.label AS marque, src.label AS source, c.label AS catégorie, CASE c.code WHEN 'transparence_financiere' THEN 'finance' WHEN 'parcours_paiement' THEN 'finance' WHEN 'service_client' THEN 'sav' WHEN 'fiabilite_reservations' THEN 'sav' WHEN 'app_fr' THEN 'produit' WHEN 'qualite_annonces' THEN 'trust_safety' WHEN 'communication_hote' THEN 'sav' ELSE 'sav' END AS owner, r.rating, SUBSTR(r.text, 1, 200) AS extrait FROM marts.fact_tickets t JOIN marts.fact_reviews r ON r.id=t.review_id JOIN marts.fact_classifications fc ON fc.review_id=r.id JOIN marts.dim_brand b ON b.id=r.brand_id JOIN marts.dim_source src ON src.id=r.source_id JOIN marts.dim_category c ON c.id=fc.category_id ORDER BY t.created_at ASC LIMIT 30;"
+      }]
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["voc", "operations", "sav"],
+  "templating": {"list": []},
+  "time": {"from": "now-90d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "VoC — Operations & SAV",
+  "uid": "voc-operations",
+  "version": 1,
+  "weekStart": ""
+}

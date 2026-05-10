@@ -1,0 +1,23 @@
+apiVersion: 1
+
+# Datasource Postgres VoC (DB warehouse). UID stable pour qu'il puisse être
+# référencé par les dashboards JSON (qui utilisent {"uid": "voc-postgres"}).
+datasources:
+  - name: VoC Postgres
+    uid: voc-postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    user: postgres
+    secureJsonData:
+      password: postgres
+    jsonData:
+      database: voc
+      sslmode: disable
+      maxOpenConns: 4
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+      postgresVersion: 1600
+      timescaledb: false
+    isDefault: true
+    editable: true
